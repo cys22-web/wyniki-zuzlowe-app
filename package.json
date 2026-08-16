@@ -1,0 +1,10 @@
+{
+  "name": "wyniki-zuzlowe-app",
+  "version": "4.2.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "build": "node scripts/build-check.js",
+    "verify:wzdb": "node scripts/verify-wzdb.js"
+  }
+}

@@ -1,1 +1,89 @@
-const C='wz-v4-20260815-fix1';const A=['./','index.html','style.css','app.js','manifest.webmanifest','icon-192.png','icon-512.png'];self.addEventListener('install',e=>e.waitUntil(caches.open(C).then(c=>c.addAll(A))).then(()=>self.skipWaiting()));self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))).then(()=>self.clients.claim()));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));
+const CACHE_NAME = "wz-v4-20260816-auto-db-v1";
+const APP_SHELL = [
+  "./",
+  "index.html",
+  "style.css",
+  "db-update.js",
+  "app.js",
+  "manifest.webmanifest",
+  "icon-192.png",
+  "icon-512.png",
+];
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+      )
+      .then(() => self.clients.claim())
+  );
+});
+
+function isDatabaseRequest(url) {
+  return (
+    (url.hostname === "raw.githubusercontent.com" &&
+      url.pathname.includes("/cys22-web/wyniki-zuzlowe-db/")) ||
+    url.pathname.endsWith(".wzdb") ||
+    url.pathname.endsWith("version.json")
+  );
+}
+
+async function networkFirst(request, fallback) {
+  const cache = await caches.open(CACHE_NAME);
+  try {
+    const response = await fetch(request);
+    if (response.ok) await cache.put(request, response.clone());
+    return response;
+  } catch (error) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    if (fallback) {
+      const fallbackResponse = await cache.match(fallback);
+      if (fallbackResponse) return fallbackResponse;
+    }
+    throw error;
+  }
+}
+
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+
+  if (isDatabaseRequest(url)) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+  if (event.request.mode === "navigate") {
+    event.respondWith(networkFirst(event.request, "index.html"));
+    return;
+  }
+
+  if (
+    url.origin === self.location.origin &&
+    (url.pathname.endsWith("app.js") ||
+      url.pathname.endsWith("db-update.js") ||
+      url.pathname.endsWith("style.css") ||
+      url.pathname.endsWith("manifest.webmanifest"))
+  ) {
+    event.respondWith(networkFirst(event.request));
+    return;
+  }
+
+  if (url.origin === self.location.origin && event.request.destination === "image") {
+    event.respondWith(
+      caches.match(event.request).then((cached) => cached || fetch(event.request))
+    );
+  }
+});

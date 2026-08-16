@@ -1,0 +1,35 @@
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+
+const root = path.resolve(__dirname, "..");
+const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+
+for (const file of ["db-update.js", "app.js", "sw.js"]) {
+  new vm.Script(read(file), { filename: file });
+}
+
+const html = read("index.html");
+for (const asset of [
+  "style.css",
+  "db-update.js",
+  "app.js",
+  "manifest.webmanifest",
+]) {
+  assert.match(html, new RegExp(`[\"']${asset.replace(".", "\\.")}[\"']`));
+  assert.ok(fs.existsSync(path.join(root, asset)), `Missing ${asset}`);
+}
+
+const app = read("app.js");
+assert.match(app, /UPDATE\.fetchVersion\(\)/);
+assert.match(app, /UPDATE\.downloadDatabase\(version\)/);
+assert.match(app, /await saveCustomDB\([\s\S]*await activateUpdatedDB/);
+
+const serviceWorker = read("sw.js");
+assert.match(serviceWorker, /isDatabaseRequest/);
+assert.match(serviceWorker, /event\.respondWith\(fetch\(event\.request\)\)/);
+assert.match(serviceWorker, /skipWaiting/);
+assert.match(serviceWorker, /clients\.claim/);
+
+console.log("Static PWA build check passed.");
