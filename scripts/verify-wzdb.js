@@ -3,6 +3,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const zlib = require("node:zlib");
+const core = require("../app-core.js");
 
 const [wzdbArgument, versionArgument] = process.argv.slice(2);
 if (!wzdbArgument || !versionArgument) {
@@ -40,8 +41,64 @@ for (const staleValue of ["Holandia", "Dania", "Australia", "Rosja", "Szwecja"])
   assert.ok(!points.includes(staleValue), `Stale score detected: ${staleValue}`);
 }
 
+const eventKeys = new Set();
+let checkedEvents = 0;
+for (const [season, refs] of Object.entries(database.events || {})) {
+  const ordinals = new Map();
+  for (const [start] of refs) {
+    const row = database.years[season][start];
+    const event = {
+      season,
+      home: database.strings[row[5]] || "",
+      away: database.strings[row[6]] || "",
+      score: database.strings[row[7]] || "",
+      league: database.strings[row[8]] || "",
+      track: database.strings[row[9]] || "",
+      competition: database.strings[row[10]] || "",
+      round: database.strings[row[11]] || "",
+      capacity: database.strings[row[12]] || "",
+    };
+    const signature = core.eventSignature(event);
+    const ordinal = ordinals.get(signature) || 0;
+    ordinals.set(signature, ordinal + 1);
+    const key = core.stableEventKey(event, ordinal);
+    assert.ok(!eventKeys.has(key), `Duplicate stable event key: ${key}`);
+    eventKeys.add(key);
+    checkedEvents += 1;
+  }
+}
+assert.equal(checkedEvents, database.stats.events, "Stable keys did not cover every event");
+
+const observedHeatCodes = new Set();
+const krosnoRecords = [];
+for (const [season, rows] of Object.entries(database.years)) {
+  for (const row of rows) {
+    const heats = database.strings[row[2]] || "";
+    for (const token of heats.toLowerCase().split(",").map((value) => value.trim())) {
+      if (["d", "w", "u", "t", "-", "ns"].includes(token)) observedHeatCodes.add(token);
+    }
+    if ((database.strings[row[9]] || "") === "Krosno") {
+      krosnoRecords.push({
+        season,
+        points: database.strings[row[1]] || "",
+        heats,
+        track: "Krosno",
+      });
+    }
+  }
+}
+assert.deepEqual([...observedHeatCodes].sort(), ["-", "d", "ns", "t", "u", "w"]);
+assert.ok(krosnoRecords.length > 0, "No Krosno records found for track regression");
+const krosnoMetric = core.playerMetric(core.filterRecords(krosnoRecords, { track: "Krosno" }));
+assert.equal(krosnoMetric.starts, krosnoRecords.length);
+assert.ok(krosnoMetric.heats > 0, "Krosno heat parser found no rides");
+assert.ok(Number.isFinite(krosnoMetric.heatAvg), "Krosno heat average is not finite");
+
 console.log(JSON.stringify({
   wzdb_sha256: actualHash,
   stats: database.stats,
   tylerHaupt2026Points: points,
+  stableEventKeys: eventKeys.size,
+  observedHeatCodes: [...observedHeatCodes].sort(),
+  krosno: { records: krosnoMetric.starts, heats: krosnoMetric.heats, heatAvg: krosnoMetric.heatAvg },
 }, null, 2));

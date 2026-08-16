@@ -1,8 +1,9 @@
-const CACHE_NAME = "wz-v4-20260816-auto-db-v1";
+const CACHE_NAME = "wz-v4-3-20260817-analytics-v1";
 const APP_SHELL = [
   "./",
   "index.html",
   "style.css",
+  "app-core.js",
   "db-update.js",
   "app.js",
   "manifest.webmanifest",
@@ -73,6 +74,7 @@ self.addEventListener("fetch", (event) => {
   if (
     url.origin === self.location.origin &&
     (url.pathname.endsWith("app.js") ||
+      url.pathname.endsWith("app-core.js") ||
       url.pathname.endsWith("db-update.js") ||
       url.pathname.endsWith("style.css") ||
       url.pathname.endsWith("manifest.webmanifest"))
