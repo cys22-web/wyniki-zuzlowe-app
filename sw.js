@@ -1,4 +1,4 @@
-const CACHE_NAME = "wz-v4-6-20260817-db-refresh-v2";
+const CACHE_NAME = "wz-v4-6-20260817-player-order-v3";
 const APP_SHELL = [
   "./",
   "index.html",

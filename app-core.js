@@ -318,18 +318,41 @@
     return [season, order];
   }
 
+  function resultDateValue(record) {
+    const raw = record?.date ?? record?.eventDate;
+    if (raw instanceof Date) {
+      const value = raw.getTime();
+      return Number.isFinite(value) ? value : null;
+    }
+    if (typeof raw !== "string" || !raw.trim()) return null;
+    const value = Date.parse(raw.trim());
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function sortPlayerResults(records, direction = "new") {
+    const multiplier = direction === "old" ? 1 : -1;
+    const decorated = (records || []).map((record, index) => ({
+      record,
+      index,
+      date: resultDateValue(record),
+      chronological: chronologicalValue(record, index),
+    }));
+    const useDates = decorated.length > 0 && decorated.every((item) => item.date !== null);
+    return decorated
+      .sort((a, b) =>
+        (useDates ? (a.date - b.date) * multiplier : 0) ||
+        (a.chronological[0] - b.chronological[0]) * multiplier ||
+        (a.chronological[1] - b.chronological[1]) * multiplier ||
+        a.index - b.index
+      )
+      .map((item) => item.record);
+  }
+
   function lastRecords(records, limit) {
     const count = Number(limit) || 0;
     if (!count) return [...(records || [])];
-    return (records || [])
-      .map((record, index) => ({ record, index, chronological: chronologicalValue(record, index) }))
-      .sort((a, b) =>
-        a.chronological[0] - b.chronological[0] ||
-        a.chronological[1] - b.chronological[1] ||
-        a.index - b.index
-      )
+    return sortPlayerResults(records, "old")
       .slice(-count)
-      .map((item) => item.record);
   }
 
   function median(values) {
@@ -796,6 +819,7 @@
     routeFromUrl,
     seasonStats,
     sampleSizeLabel,
+    sortPlayerResults,
     standardDeviation,
     stableEventKey,
     stableHash,

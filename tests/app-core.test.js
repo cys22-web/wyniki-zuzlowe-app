@@ -314,6 +314,44 @@ test("latest events reverse sheet order inside the newest season", () => {
   assert.deepEqual(latest.map((event) => event.key), ["last", "middle", "first"]);
 });
 
+test("player results use event date and reverse source order for equal dates", () => {
+  const sorted = core.sortPlayerResults([
+    { id: "same-date-upper", season: "2026", date: "2026-08-16", order: 40 },
+    { id: "older", season: "2026", date: "2026-08-15", order: 200 },
+    { id: "same-date-lower", season: "2026", date: "2026-08-16", order: 80 },
+    { id: "newest", season: "2026", date: "2026-08-17", order: 10 },
+  ]);
+
+  assert.deepEqual(sorted.map((record) => record.id), [
+    "newest",
+    "same-date-lower",
+    "same-date-upper",
+    "older",
+  ]);
+});
+
+test("player results without dates fall back to season and lower Excel rows first", () => {
+  const records = [
+    { id: "2025-low", season: "2025", order: 500 },
+    { id: "2026-upper", season: "2026", order: 30 },
+    { id: "2026-lower", season: "2026", order: 90 },
+    { id: "2024", season: "2024", order: 900 },
+  ];
+
+  assert.deepEqual(core.sortPlayerResults(records).map((record) => record.id), [
+    "2026-lower",
+    "2026-upper",
+    "2025-low",
+    "2024",
+  ]);
+  assert.deepEqual(core.sortPlayerResults(records, "old").map((record) => record.id), [
+    "2024",
+    "2025-low",
+    "2026-upper",
+    "2026-lower",
+  ]);
+});
+
 test("current form selects the newest 5 and 10 starts chronologically", () => {
   const records = Array.from({ length: 12 }, (_, index) => ({
     season: index < 2 ? "2025" : "2026",

@@ -43,6 +43,14 @@ test("small-sample warnings follow the requested 1-5 and 6-10 boundaries", () =>
   assert.match(app, /Ograniczona próba – interpretuj wynik ostrożnie/);
 });
 
+test("profile lists use the shared chronological sorter after filtering", () => {
+  assert.match(html, /Wyniki: najnowsze pierwsze/);
+  assert.match(html, /Najnowsze wyniki są u góry, a najstarsze na dole/);
+  assert.match(app, /profileFilteredModel=CORE\.sortPlayerResults\(CORE\.filterRecords/);
+  assert.match(app, /filtered=CORE\.sortPlayerResults\(scoped,sortMode\)\.map/);
+  assert.match(app, /sorted=sortResultRefs\(rows,'new'\)/);
+});
+
 test("service-worker controller change performs at most one guarded reload", async () => {
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
   const source = scripts.at(-1)[1];
