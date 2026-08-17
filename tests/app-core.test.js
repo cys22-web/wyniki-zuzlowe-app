@@ -199,6 +199,21 @@ test("common events are joined only by the stable event key", () => {
   assert.equal(result.leftWins, 1);
   assert.equal(result.rightWins, 0);
   assert.equal(result.ties, 1);
+  assert.equal(result.compared, 2);
+  assert.equal(result.leftAverage, 10);
+  assert.equal(result.rightAverage, 9);
+});
+
+test("common event balance stays empty when riders have no shared event key", () => {
+  const result = core.commonEvents(
+    [{ key: "left-event", points: "12" }],
+    [{ key: "right-event", points: "14" }]
+  );
+
+  assert.equal(result.events.length, 0);
+  assert.equal(result.compared, 0);
+  assert.equal(result.leftAverage, null);
+  assert.equal(result.rightAverage, null);
 });
 
 test("routing state round-trips player and event URLs", () => {
@@ -233,6 +248,36 @@ test("latest events reverse sheet order inside the newest season", () => {
   ], 3);
 
   assert.deepEqual(latest.map((event) => event.key), ["last", "middle", "first"]);
+});
+
+test("current form selects the newest 5 and 10 starts chronologically", () => {
+  const records = Array.from({ length: 12 }, (_, index) => ({
+    season: index < 2 ? "2025" : "2026",
+    order: index,
+    points: String(index + 1),
+    heats: index === 9 ? "" : "3,2,1,0",
+  }));
+  const form = core.currentForm(records);
+
+  assert.deepEqual(form.last5.results, ["12", "11", "10", "9", "8"]);
+  assert.deepEqual(form.last10.results, ["12", "11", "10", "9", "8", "7", "6", "5", "4", "3"]);
+  assert.equal(form.last5.average, 10);
+  assert.equal(form.last10.average, 7.5);
+  assert.equal(form.last5.available, 5);
+});
+
+test("current form reports an incomplete sample and excludes missing heats only from heat average", () => {
+  const form = core.currentForm([
+    { season: "2026", order: 1, points: "5", heats: "" },
+    { season: "2026", order: 2, points: "7", heats: "2,2,2,1" },
+    { season: "2026", order: 3, points: "9", heats: "3,2,2,2" },
+  ]).last5;
+
+  assert.equal(form.available, 3);
+  assert.equal(form.requested, 5);
+  assert.deepEqual(form.results, ["9", "7", "5"]);
+  assert.equal(form.average, 7);
+  assert.equal(form.heatAverage, 2);
 });
 
 const thresholdRecords = [
@@ -273,6 +318,19 @@ test("last 5 and last 10 are selected only after the supplied filters", () => {
   assert.deepEqual(core.analyzeThreshold(records, 0, { lastN: 10 }).results.map((item) => item.value), [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   const filtered = core.filterRecords(thresholdRecords, { league: "Polska", track: "Wrocław" });
   assert.equal(core.analyzeThreshold(filtered, 8.5, { lastN: 5 }).sample, 2);
+});
+
+test("threshold trend counts last 5, last 10 and the newest uninterrupted series", () => {
+  const records = [10, 9, 7, 11, 12, 13].map((points, order) => ({
+    season: "2026",
+    order,
+    points: String(points),
+  })).reverse();
+  const trend = core.thresholdTrend(records, 8.5);
+
+  assert.deepEqual(trend.last5, { over: 4, sample: 5 });
+  assert.deepEqual(trend.last10, { over: 5, sample: 6 });
+  assert.deepEqual(trend.streak, { outcome: "OVER", count: 3 });
 });
 
 test("league, track and their combination filter the threshold dataset", () => {

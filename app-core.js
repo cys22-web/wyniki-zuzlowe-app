@@ -341,6 +341,45 @@
       : (sorted[middle - 1] + sorted[middle]) / 2;
   }
 
+  function standardDeviation(values) {
+    if (!values.length) return null;
+    const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+    const variance = values.reduce(
+      (sum, value) => sum + (value - average) ** 2,
+      0
+    ) / values.length;
+    return Math.sqrt(variance);
+  }
+
+  function formStats(records, limit = 10) {
+    const limited = lastRecords(records, limit);
+    const metric = playerMetric(limited);
+    const numeric = limited
+      .map((record) => parsePointsBreakdown(record.points).points)
+      .filter((value) => value !== null);
+    return {
+      requested: Number(limit) || limited.length,
+      available: limited.length,
+      records: limited,
+      results: [...limited].reverse().map((record) => String(record.points ?? "").trim() || "—"),
+      average: numeric.length
+        ? numeric.reduce((sum, value) => sum + value, 0) / numeric.length
+        : null,
+      heatAverage: metric.heatAvg,
+      min: numeric.length ? Math.min(...numeric) : null,
+      max: numeric.length ? Math.max(...numeric) : null,
+      standardDeviation: standardDeviation(numeric),
+      numeric: numeric.length,
+    };
+  }
+
+  function currentForm(records) {
+    return {
+      last5: formStats(records, 5),
+      last10: formStats(records, 10),
+    };
+  }
+
   function sampleSizeLabel(size) {
     if (size < 5) return "bardzo mała próba";
     if (size < 10) return "mała próba";
@@ -370,9 +409,6 @@
     const sample = values.length;
     const total = values.reduce((sum, value) => sum + value, 0);
     const mean = sample ? total / sample : null;
-    const variance = sample
-      ? values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / sample
-      : null;
     const heatInfo = results.map((item) => parseHeats(item.record.heats));
     const totalHeats = heatInfo.reduce((sum, item) => sum + item.rides, 0);
     const heatPoints = results.reduce((sum, item, index) => {
@@ -396,12 +432,28 @@
       median: median(values),
       min: sample ? Math.min(...values) : null,
       max: sample ? Math.max(...values) : null,
-      standardDeviation: variance === null ? null : Math.sqrt(variance),
+      standardDeviation: standardDeviation(values),
       heats: totalHeats,
       averageHeats: sample ? totalHeats / sample : null,
       heatAverage: totalHeats ? heatPoints / totalHeats : null,
       sampleLabel: sampleSizeLabel(sample),
       results,
+    };
+  }
+
+  function thresholdTrend(records, threshold, options = {}) {
+    const chronological = lastRecords(records, Math.max(1, (records || []).length));
+    const all = analyzeThreshold(chronological, threshold, { ...options, lastN: 0 });
+    const last5 = analyzeThreshold(records, threshold, { ...options, lastN: 5 });
+    const last10 = analyzeThreshold(records, threshold, { ...options, lastN: 10 });
+    const newest = [...all.results].reverse();
+    const outcome = newest[0]?.outcome || null;
+    let streak = 0;
+    while (streak < newest.length && newest[streak].outcome === outcome) streak += 1;
+    return {
+      last5: { over: last5.over, sample: last5.sample },
+      last10: { over: last10.over, sample: last10.sample },
+      streak: { outcome, count: streak },
     };
   }
 
@@ -574,6 +626,9 @@
     let leftWins = 0;
     let rightWins = 0;
     let ties = 0;
+    let compared = 0;
+    let leftTotal = 0;
+    let rightTotal = 0;
     for (const leftEvent of left || []) {
       const rightEvent = rightByKey.get(leftEvent.key);
       if (!rightEvent) continue;
@@ -581,6 +636,9 @@
       const rightPoints = basePoints(rightEvent.points);
       let difference = null;
       if (leftPoints !== null && rightPoints !== null) {
+        compared += 1;
+        leftTotal += leftPoints;
+        rightTotal += rightPoints;
         difference = leftPoints - rightPoints;
         if (difference > 0) leftWins += 1;
         else if (difference < 0) rightWins += 1;
@@ -595,7 +653,15 @@
         difference,
       });
     }
-    return { events, leftWins, rightWins, ties };
+    return {
+      events,
+      leftWins,
+      rightWins,
+      ties,
+      compared,
+      leftAverage: compared ? leftTotal / compared : null,
+      rightAverage: compared ? rightTotal / compared : null,
+    };
   }
 
   function latestEventRefs(eventRefs, limit = 10) {
@@ -617,10 +683,12 @@
     cascadingFilterOptions,
     classifyTeamEvent,
     commonEvents,
+    currentForm,
     eventSignature,
     formatEventUrl,
     formatPlayerUrl,
     filterRecords,
+    formStats,
     latestEventRefs,
     lastRecords,
     normalize,
@@ -633,8 +701,10 @@
     routeFromUrl,
     seasonStats,
     sampleSizeLabel,
+    standardDeviation,
     stableEventKey,
     stableHash,
+    thresholdTrend,
     urlForRoute,
   };
 });

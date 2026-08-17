@@ -22,6 +22,27 @@ test("tab switching changes visibility without clearing shared filters", () => {
   assert.match(body, /playerView==='threshold'/);
 });
 
+test("v4.5 profile exposes synchronized quick filters, current form and a metric toggle", () => {
+  assert.match(html, /id="quickProfileFilters"/);
+  assert.match(html, /id="currentForm"/);
+  assert.match(html, /id="formChart"/);
+  assert.match(html, /data-form-metric="points"/);
+  assert.match(html, /data-form-metric="heat"/);
+  assert.match(html, /id="thresholdRangeChips"/);
+  assert.match(html, /id="thresholdPlaceChips"/);
+  assert.match(html, /id="cmpForm"/);
+  assert.match(app, /type==='competition'\)\$\('comp'\)\.value/);
+  assert.match(app, /\$\('thresholdLast'\)\.value=button\.dataset\.thresholdLast/);
+  assert.match(app, /\$\('thresholdPlace'\)\.value=button\.dataset\.thresholdPlace/);
+});
+
+test("small-sample warnings follow the requested 1-5 and 6-10 boundaries", () => {
+  assert.match(app, /analysis\.sample>=1&&analysis\.sample<=5/);
+  assert.match(app, /analysis\.sample<=10&&analysis\.sample>5/);
+  assert.match(app, /Mała próba – wynik może być mało reprezentatywny/);
+  assert.match(app, /Ograniczona próba – interpretuj wynik ostrożnie/);
+});
+
 test("service-worker controller change performs at most one guarded reload", async () => {
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
   const source = scripts.at(-1)[1];
@@ -50,5 +71,5 @@ test("service-worker controller change performs at most one guarded reload", asy
   handlers.controllerchange();
   handlers.controllerchange();
   assert.equal(reloads, 1);
-  assert.equal(storage.get("wz-pwa-controller-reload-v44"), "1");
+  assert.equal(storage.get("wz-pwa-controller-reload-v45"), "1");
 });

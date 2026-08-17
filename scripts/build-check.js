@@ -29,6 +29,9 @@ assert.match(app, /await saveCustomDB\([\s\S]*await activateUpdatedDB/);
 assert.match(app, /renderLatestEvents/);
 assert.match(app, /renderPlayerAnalytics/);
 assert.match(app, /renderCommonEvents/);
+assert.match(app, /renderCurrentForm/);
+assert.match(app, /renderComparisonForm/);
+assert.match(app, /thresholdTrend/);
 assert.match(app, /history\.pushState/);
 assert.match(app, /window\.addEventListener\('popstate'/);
 assert.match(app, /activateUpdatedDB=async function\(db\)[\s\S]*captureViewContext[\s\S]*applyRoute/);
@@ -46,5 +49,6 @@ assert.match(serviceWorker, /event\.respondWith\(fetch\(event\.request\)\)/);
 assert.match(serviceWorker, /skipWaiting/);
 assert.match(serviceWorker, /clients\.claim/);
 assert.match(serviceWorker, /app-core\.js/);
+assert.match(serviceWorker, /wz-v4-5-/);
 
 console.log("Static PWA build check passed.");

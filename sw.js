@@ -1,4 +1,4 @@
-const CACHE_NAME = "wz-v4-4-20260817-threshold-v1";
+const CACHE_NAME = "wz-v4-5-20260817-form-v2";
 const APP_SHELL = [
   "./",
   "index.html",
