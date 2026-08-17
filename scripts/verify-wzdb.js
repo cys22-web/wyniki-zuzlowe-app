@@ -87,6 +87,53 @@ for (const [season, refs] of Object.entries(database.events || {})) {
 assert.equal(checkedEvents, database.stats.events, "Stable keys did not cover every event");
 assert.ok(classifiedTeamEvents / teamEvents > 0.9, "Too few team events have an unambiguous HOME/AWAY split");
 
+let logicalEventCount = 0;
+let logicalMultiTeamEvents = 0;
+const mergedEventExamples = [];
+let hallstavikDivisionOne = null;
+for (const [season, refs] of Object.entries(database.events || {})) {
+  const rows = database.years[season];
+  const physical = refs.map(([start, count]) => {
+    const row = rows[start];
+    return {
+      start,
+      count,
+      season,
+      home: database.strings[row[5]] || "",
+      away: database.strings[row[6]] || "",
+      score: database.strings[row[7]] || "",
+      league: database.strings[row[8]] || "",
+      track: database.strings[row[9]] || "",
+      competition: database.strings[row[10]] || "",
+      round: database.strings[row[11]] || "",
+    };
+  });
+  const logical = core.mergeAdjacentEvents(physical);
+  logicalEventCount += logical.length;
+  for (const event of logical) {
+    if (!event.multiTeam) continue;
+    logicalMultiTeamEvents += 1;
+    if (mergedEventExamples.length < 5) {
+      mergedEventExamples.push({ season, league: event.league, track: event.track, competition: event.competition, round: event.round, participants: event.count, teams: event.teams.length });
+    }
+  }
+  if (season === "2026") {
+    hallstavikDivisionOne = logical.find((event) =>
+      event.league === "Szwecja" &&
+      event.track === "Hallstavik" &&
+      event.competition === "Division 1" &&
+      event.round === "13 runda"
+    ) || hallstavikDivisionOne;
+  }
+}
+assert.ok(hallstavikDivisionOne, "Hallstavik Division 1 round 13 is missing");
+assert.ok(logicalMultiTeamEvents > 100, "Too few multi-team fragment groups were recognized across WZDB");
+assert.equal(hallstavikDivisionOne.count, 13, "Hallstavik event does not contain all 13 riders");
+assert.equal(hallstavikDivisionOne.fragmentCount, 4, "Hallstavik event did not merge four fragments");
+assert.deepEqual(hallstavikDivisionOne.teams.map((team) => team.name), [
+  "Team Campus Roslagen", "Smederna B", "Gnistorna Malmoe", "Piraterna B",
+]);
+
 const observedHeatCodes = new Set();
 const krosnoRecords = [];
 for (const [season, rows] of Object.entries(database.years)) {
@@ -117,6 +164,14 @@ console.log(JSON.stringify({
   stats: database.stats,
   tylerHaupt2026Points: points,
   stableEventKeys: eventKeys.size,
+  logicalEvents: logicalEventCount,
+  logicalMultiTeamEvents,
+  mergedEventExamples,
+  hallstavikDivisionOne: {
+    participants: hallstavikDivisionOne.count,
+    fragments: hallstavikDivisionOne.fragmentCount,
+    teams: hallstavikDivisionOne.teams,
+  },
   homeAwayClassification: {
     teamEvents,
     classifiedTeamEvents,

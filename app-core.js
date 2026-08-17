@@ -531,6 +531,98 @@
     return `e${season}-${stableHash(eventSignature(event))}-${Number(ordinal).toString(36)}`;
   }
 
+  const LOGICAL_EVENT_FIELDS = ["season", "league", "track", "competition", "round"];
+
+  function logicalEventSignature(event) {
+    return LOGICAL_EVENT_FIELDS.map((field) => normalize(event?.[field])).join("\u001f");
+  }
+
+  function standingTeam(event) {
+    const home = String(event?.home || "").trim();
+    const away = String(event?.away || "").trim();
+    const score = String(event?.score || "").trim();
+    if (!score || Boolean(home) === Boolean(away)) return null;
+    return { name: home || away, score };
+  }
+
+  /*
+   * Some multi-team meetings are exported as adjacent physical blocks: one
+   * block per team. Merge only a strong, row-contiguous identity with at least
+   * two distinct single-team standings. Ordinary two-team matches (both team
+   * fields set) and individual categories therefore remain separate.
+   */
+  function mergeAdjacentEvents(events) {
+    const source = events || [];
+    const merged = [];
+    for (let index = 0; index < source.length;) {
+      const first = source[index];
+      const signature = logicalEventSignature(first);
+      const strong = Boolean(
+        String(first?.season || "").trim() &&
+        String(first?.track || "").trim() &&
+        String(first?.competition || "").trim()
+      );
+      let end = index + 1;
+      while (
+        strong &&
+        end < source.length &&
+        logicalEventSignature(source[end]) === signature &&
+        Number(source[end - 1].start) + Number(source[end - 1].count) === Number(source[end].start)
+      ) end += 1;
+
+      const run = source.slice(index, end);
+      const teams = [];
+      const seenTeams = new Set();
+      for (const event of run) {
+        const candidates = Array.isArray(event.teams) && event.teams.length
+          ? event.teams
+          : [standingTeam(event)].filter(Boolean);
+        for (const team of candidates) {
+          const key = normalize(team.name);
+          if (!key || seenTeams.has(key)) continue;
+          seenTeams.add(key);
+          teams.push({ name: String(team.name), score: String(team.score || "") });
+        }
+      }
+
+      if (strong && run.length > 1 && teams.length > 1) {
+        const last = run.at(-1);
+        merged.push({
+          ...first,
+          count: Number(last.start) + Number(last.count) - Number(first.start),
+          fragmentCount: run.reduce((sum, event) => sum + Number(event.fragmentCount || 1), 0),
+          multiTeam: true,
+          teams,
+        });
+      } else {
+        for (const event of run) {
+          merged.push({
+            ...event,
+            fragmentCount: Number(event.fragmentCount || 1),
+            multiTeam: Boolean(event.multiTeam),
+            teams: Array.isArray(event.teams) ? event.teams : [],
+          });
+        }
+      }
+      index = end;
+    }
+    return merged;
+  }
+
+  function comparisonTrackOptions(leftTracks, rightTracks) {
+    const left = new Set((leftTracks || []).map(String).filter(Boolean));
+    const right = new Set((rightTracks || []).map(String).filter(Boolean));
+    return [...new Set([...left, ...right])]
+      .map((value) => ({
+        value,
+        scope: left.has(value) && right.has(value) ? "both" : left.has(value) ? "left" : "right",
+      }))
+      .sort((a, b) =>
+        Number(b.scope === "both") - Number(a.scope === "both") ||
+        a.value.localeCompare(b.value, "pl")
+      );
+  }
+
   function playerDeepLinkKey(player) {
     return normalize(Array.isArray(player) ? player[3] || player[0] : player?.key || player);
   }
@@ -682,6 +774,7 @@
     analyzeThreshold,
     cascadingFilterOptions,
     classifyTeamEvent,
+    comparisonTrackOptions,
     commonEvents,
     currentForm,
     eventSignature,
@@ -690,6 +783,7 @@
     filterRecords,
     formStats,
     latestEventRefs,
+    logicalEventSignature,
     lastRecords,
     normalize,
     normalizeRoute,
@@ -698,6 +792,7 @@
     parseHeats,
     parsePointsBreakdown,
     rankPlayers,
+    mergeAdjacentEvents,
     routeFromUrl,
     seasonStats,
     sampleSizeLabel,

@@ -115,6 +115,12 @@ test("comparison keeps a rider with no starts on selected track", () => {
   assert.equal(right.starts, 0);
   assert.equal(right.heats, 0);
   assert.equal(right.heatAvg, null);
+
+  const onlyRightLeft = core.playerMetric(core.filterRecords(trackRecordsA, { track: "Toruń" }));
+  const onlyRightRight = core.playerMetric(core.filterRecords(trackRecordsB, { track: "Toruń" }));
+  assert.equal(onlyRightLeft.starts, 0);
+  assert.equal(onlyRightLeft.heatAvg, null);
+  assert.equal(onlyRightRight.starts, 1);
 });
 
 test("common events and their result use the same track-filtered records", () => {
@@ -179,6 +185,64 @@ test("event key is deterministic, canonical and distinguishes identical occurren
     core.stableEventKey(event, 0),
     core.stableEventKey({ ...event, track: "Lublin" }, 0)
   );
+});
+
+test("adjacent multi-team fragments become one logical event", () => {
+  const base = { season: "2026", league: "Szwecja", track: "Hallstavik", competition: "Division 1", round: "13 runda" };
+  const merged = core.mergeAdjacentEvents([
+    { ...base, start: 12690, count: 4, home: "Team Campus Roslagen", away: "", score: "37" },
+    { ...base, start: 12694, count: 3, home: "", away: "Smederna B", score: "29" },
+    { ...base, start: 12697, count: 3, home: "", away: "Gnistorna Malmoe", score: "26" },
+    { ...base, start: 12700, count: 3, home: "", away: "Piraterna B", score: "14" },
+  ]);
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].count, 13);
+  assert.equal(merged[0].fragmentCount, 4);
+  assert.equal(merged[0].multiTeam, true);
+  assert.deepEqual(merged[0].teams.map((team) => team.name), [
+    "Team Campus Roslagen", "Smederna B", "Gnistorna Malmoe", "Piraterna B",
+  ]);
+});
+
+test("logical event merge stays conservative for groups, rounds and individual categories", () => {
+  const base = { season: "2026", league: "Polska", track: "Krosno", competition: "Turniej" };
+  const separate = core.mergeAdjacentEvents([
+    { ...base, round: "Grupa A", start: 0, count: 4, home: "A", away: "", score: "12" },
+    { ...base, round: "Grupa B", start: 4, count: 4, home: "", away: "B", score: "11" },
+    { ...base, round: "Finał", start: 8, count: 4, home: "", away: "", score: "" },
+    { ...base, round: "Finał", start: 12, count: 4, home: "", away: "", score: "" },
+  ]);
+  assert.equal(separate.length, 4);
+
+  const matches = core.mergeAdjacentEvents([
+    { ...base, round: "1 runda", start: 0, count: 14, home: "Krosno", away: "Lublin", score: "45:45" },
+    { ...base, round: "1 runda", start: 14, count: 14, home: "Toruń", away: "Wrocław", score: "44:46" },
+  ]);
+  assert.equal(matches.length, 2);
+});
+
+test("comparison track selector is the annotated union of both riders", () => {
+  assert.deepEqual(core.comparisonTrackOptions(
+    ["Krosno", "Lublin"],
+    ["Krosno", "Toruń"]
+  ), [
+    { value: "Krosno", scope: "both" },
+    { value: "Lublin", scope: "left" },
+    { value: "Toruń", scope: "right" },
+  ]);
+});
+
+test("comparison filters each rider independently before finding common events", () => {
+  const filters = { track: "Krosno", season: "2026" };
+  const left = core.filterRecords(trackRecordsA, filters);
+  const right = core.filterRecords(trackRecordsB, filters);
+  const common = core.commonEvents(left, right);
+  assert.deepEqual(left.map((record) => record.id), ["a-k-26", "a-k-other"]);
+  assert.deepEqual(right.map((record) => record.id), ["b-k-26"]);
+  assert.equal(core.playerMetric(left).starts, 2);
+  assert.equal(core.playerMetric(right).starts, 1);
+  assert.equal(common.events.length, 1);
 });
 
 test("common events are joined only by the stable event key", () => {
