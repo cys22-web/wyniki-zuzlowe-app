@@ -43,9 +43,13 @@ for (const staleValue of ["Holandia", "Dania", "Australia", "Rosja", "Szwecja"])
 
 const eventKeys = new Set();
 let checkedEvents = 0;
+let teamEvents = 0;
+let classifiedTeamEvents = 0;
+let teamRows = 0;
+let classifiedTeamRows = 0;
 for (const [season, refs] of Object.entries(database.events || {})) {
   const ordinals = new Map();
-  for (const [start] of refs) {
+  for (const [start, count] of refs) {
     const row = database.years[season][start];
     const event = {
       season,
@@ -65,9 +69,23 @@ for (const [season, refs] of Object.entries(database.events || {})) {
     assert.ok(!eventKeys.has(key), `Duplicate stable event key: ${key}`);
     eventKeys.add(key);
     checkedEvents += 1;
+    if (event.home && event.away && event.score) {
+      const eventRows = database.years[season].slice(start, start + count);
+      teamEvents += 1;
+      teamRows += count;
+      const sideResult = core.classifyTeamEvent(
+        eventRows.map((record) => ({ points: database.strings[record[1]] || "" })),
+        event
+      );
+      if (sideResult.classified) {
+        classifiedTeamEvents += 1;
+        classifiedTeamRows += count;
+      }
+    }
   }
 }
 assert.equal(checkedEvents, database.stats.events, "Stable keys did not cover every event");
+assert.ok(classifiedTeamEvents / teamEvents > 0.9, "Too few team events have an unambiguous HOME/AWAY split");
 
 const observedHeatCodes = new Set();
 const krosnoRecords = [];
@@ -99,6 +117,14 @@ console.log(JSON.stringify({
   stats: database.stats,
   tylerHaupt2026Points: points,
   stableEventKeys: eventKeys.size,
+  homeAwayClassification: {
+    teamEvents,
+    classifiedTeamEvents,
+    eventPercent: classifiedTeamEvents / teamEvents * 100,
+    teamRows,
+    classifiedTeamRows,
+    rowPercent: classifiedTeamRows / teamRows * 100,
+  },
   observedHeatCodes: [...observedHeatCodes].sort(),
   krosno: { records: krosnoMetric.starts, heats: krosnoMetric.heats, heatAvg: krosnoMetric.heatAvg },
 }, null, 2));

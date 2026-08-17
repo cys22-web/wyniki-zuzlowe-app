@@ -276,6 +276,7 @@
       if (filters.league && record.league !== filters.league) return false;
       if (filters.competition && record.competition !== filters.competition) return false;
       if (filters.track && record.track !== filters.track) return false;
+      if (filters.homeAway && record.homeAway !== filters.homeAway) return false;
       if (search) {
         const haystack = normalize(
           record.searchText ||
@@ -287,6 +288,157 @@
       }
       return true;
     });
+  }
+
+  const FILTER_FIELDS = ["season", "league", "competition", "track"];
+
+  function cascadingFilterOptions(records, filters = {}, fields = FILTER_FIELDS) {
+    const result = {};
+    for (const field of fields) {
+      const otherFilters = {};
+      for (const candidate of fields) {
+        if (candidate !== field && filters[candidate]) {
+          otherFilters[candidate] = filters[candidate];
+        }
+      }
+      result[field] = [...new Set(
+        filterRecords(records, otherFilters)
+          .map((record) => String(record[field] ?? "").trim())
+          .filter(Boolean)
+      )].sort((a, b) => field === "season"
+        ? Number(b) - Number(a)
+        : a.localeCompare(b, "pl"));
+    }
+    return result;
+  }
+
+  function chronologicalValue(record, fallback) {
+    const season = Number(record?.season) || 0;
+    const order = Number.isFinite(Number(record?.order)) ? Number(record.order) : fallback;
+    return [season, order];
+  }
+
+  function lastRecords(records, limit) {
+    const count = Number(limit) || 0;
+    if (!count) return [...(records || [])];
+    return (records || [])
+      .map((record, index) => ({ record, index, chronological: chronologicalValue(record, index) }))
+      .sort((a, b) =>
+        a.chronological[0] - b.chronological[0] ||
+        a.chronological[1] - b.chronological[1] ||
+        a.index - b.index
+      )
+      .slice(-count)
+      .map((item) => item.record);
+  }
+
+  function median(values) {
+    if (!values.length) return null;
+    const sorted = [...values].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2
+      ? sorted[middle]
+      : (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+
+  function sampleSizeLabel(size) {
+    if (size < 5) return "bardzo mała próba";
+    if (size < 10) return "mała próba";
+    if (size < 20) return "umiarkowana próba";
+    return "większa próba";
+  }
+
+  function analyzeThreshold(records, threshold, options = {}) {
+    const line = Number(String(threshold).replace(",", "."));
+    if (!Number.isFinite(line)) {
+      return { threshold: null, sample: 0, over: 0, under: 0, push: 0, results: [] };
+    }
+    const pointsMode = options.pointsMode === "pointsBonus" ? "pointsBonus" : "points";
+    const limited = lastRecords(records, options.lastN);
+    const results = [];
+    for (const record of limited) {
+      const breakdown = parsePointsBreakdown(record.points);
+      if (!breakdown.pointsReliable) continue;
+      if (pointsMode === "pointsBonus" && !breakdown.reliable) continue;
+      const value = pointsMode === "pointsBonus"
+        ? breakdown.totalWithBonus
+        : breakdown.points;
+      const outcome = value > line ? "OVER" : value < line ? "UNDER" : "PUSH";
+      results.push({ record, value, outcome });
+    }
+    const values = results.map((item) => item.value);
+    const sample = values.length;
+    const total = values.reduce((sum, value) => sum + value, 0);
+    const mean = sample ? total / sample : null;
+    const variance = sample
+      ? values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / sample
+      : null;
+    const heatInfo = results.map((item) => parseHeats(item.record.heats));
+    const totalHeats = heatInfo.reduce((sum, item) => sum + item.rides, 0);
+    const heatPoints = results.reduce((sum, item, index) => {
+      if (!heatInfo[index].rides) return sum;
+      return sum + item.value;
+    }, 0);
+    const over = results.filter((item) => item.outcome === "OVER").length;
+    const under = results.filter((item) => item.outcome === "UNDER").length;
+    const push = results.filter((item) => item.outcome === "PUSH").length;
+    return {
+      threshold: line,
+      pointsMode,
+      sample,
+      over,
+      under,
+      push,
+      overPct: sample ? (over / sample) * 100 : 0,
+      underPct: sample ? (under / sample) * 100 : 0,
+      pushPct: sample ? (push / sample) * 100 : 0,
+      mean,
+      median: median(values),
+      min: sample ? Math.min(...values) : null,
+      max: sample ? Math.max(...values) : null,
+      standardDeviation: variance === null ? null : Math.sqrt(variance),
+      heats: totalHeats,
+      averageHeats: sample ? totalHeats / sample : null,
+      heatAverage: totalHeats ? heatPoints / totalHeats : null,
+      sampleLabel: sampleSizeLabel(sample),
+      results,
+    };
+  }
+
+  /*
+   * Team-event rows in WZDB are stored as two contiguous rider blocks. We only
+   * accept a split when both blocks reproduce the published match score and a
+   * single most-balanced boundary exists; otherwise every rider stays UNKNOWN.
+   */
+  function classifyTeamEvent(records, event = {}) {
+    const rows = records || [];
+    const score = String(event.score || rows[0]?.score || "");
+    const match = score.match(/(\d+(?:[.,]\d+)?)\s*[-:]\s*(\d+(?:[.,]\d+)?)/);
+    const home = String(event.home || rows[0]?.home || "").trim();
+    const away = String(event.away || rows[0]?.away || "").trim();
+    const unknown = { classified: false, split: null, sides: rows.map(() => "UNKNOWN") };
+    if (!home || !away || !match || rows.length < 6) return unknown;
+    const homeScore = Number(match[1].replace(",", "."));
+    const awayScore = Number(match[2].replace(",", "."));
+    const points = rows.map((record) => parsePointsBreakdown(record.points).points ?? 0);
+    const candidates = [];
+    for (let split = 3; split <= rows.length - 3; split += 1) {
+      const left = points.slice(0, split).reduce((sum, value) => sum + value, 0);
+      const right = points.slice(split).reduce((sum, value) => sum + value, 0);
+      if (Math.abs(left - homeScore) < 1e-9 && Math.abs(right - awayScore) < 1e-9) {
+        candidates.push({ split, balance: Math.abs(split * 2 - rows.length) });
+      }
+    }
+    candidates.sort((a, b) => a.balance - b.balance);
+    if (!candidates.length || (candidates[1] && candidates[0].balance === candidates[1].balance)) {
+      return unknown;
+    }
+    const split = candidates[0].split;
+    return {
+      classified: true,
+      split,
+      sides: rows.map((_, index) => index < split ? "HOME" : "AWAY"),
+    };
   }
 
   function stableHash(value, seed = 0) {
@@ -333,7 +485,19 @@
 
   function normalizeRoute(route) {
     if (route?.view === "player" && playerDeepLinkKey(route.playerKey)) {
-      return { view: "player", playerKey: playerDeepLinkKey(route.playerKey) };
+      const playerRoute = {
+        view: "player",
+        playerKey: playerDeepLinkKey(route.playerKey),
+      };
+      if (["stats", "threshold"].includes(route.profileView)) playerRoute.profileView = route.profileView;
+      if (route.threshold !== undefined && route.threshold !== null && route.threshold !== "") playerRoute.threshold = route.threshold;
+      for (const field of ["season", "league", "competition", "track"]) {
+        if (route[field]) playerRoute[field] = route[field];
+      }
+      if (["HOME", "AWAY"].includes(route.homeAway)) playerRoute.homeAway = route.homeAway;
+      if (Number(route.lastN)) playerRoute.lastN = Number(route.lastN);
+      if (route.pointsMode === "pointsBonus") playerRoute.pointsMode = "pointsBonus";
+      return playerRoute;
     }
     if (route?.view === "event" && route.eventKey) {
       return { view: "event", eventKey: String(route.eventKey) };
@@ -354,7 +518,19 @@
     const eventKey = url.searchParams.get("event");
     if (eventKey) return { view: "event", eventKey };
     const playerKey = playerDeepLinkKey(url.searchParams.get("player"));
-    if (playerKey) return { view: "player", playerKey };
+    if (playerKey) return normalizeRoute({
+      view: "player",
+      playerKey,
+      profileView: url.searchParams.get("view"),
+      threshold: url.searchParams.get("line") || undefined,
+      season: url.searchParams.get("season"),
+      league: url.searchParams.get("league"),
+      competition: url.searchParams.get("competition"),
+      track: url.searchParams.get("track"),
+      homeAway: url.searchParams.get("place"),
+      lastN: url.searchParams.get("last"),
+      pointsMode: url.searchParams.get("points"),
+    });
     return { view: "home" };
   }
 
@@ -362,9 +538,21 @@
     const url = new URL(input, "https://app.invalid/");
     url.searchParams.delete("player");
     url.searchParams.delete("event");
+    for (const name of ["view", "line", "season", "league", "competition", "track", "place", "last", "points"]) {
+      url.searchParams.delete(name);
+    }
     const normalized = normalizeRoute(route);
     if (normalized.view === "player") {
       url.searchParams.set("player", normalized.playerKey);
+      if (normalized.profileView) url.searchParams.set("view", normalized.profileView);
+      if (normalized.profileView === "threshold" && normalized.threshold !== undefined) url.searchParams.set("line", normalized.threshold);
+      if (normalized.season) url.searchParams.set("season", normalized.season);
+      if (normalized.league) url.searchParams.set("league", normalized.league);
+      if (normalized.competition) url.searchParams.set("competition", normalized.competition);
+      if (normalized.track) url.searchParams.set("track", normalized.track);
+      if (normalized.homeAway) url.searchParams.set("place", normalized.homeAway);
+      if (normalized.lastN) url.searchParams.set("last", normalized.lastN);
+      if (normalized.pointsMode === "pointsBonus") url.searchParams.set("points", "pointsBonus");
     } else if (normalized.view === "event") {
       url.searchParams.set("event", normalized.eventKey);
     }
@@ -425,12 +613,16 @@
     bestHeatSeason,
     bestSeason,
     boundedDamerauLevenshtein,
+    analyzeThreshold,
+    cascadingFilterOptions,
+    classifyTeamEvent,
     commonEvents,
     eventSignature,
     formatEventUrl,
     formatPlayerUrl,
     filterRecords,
     latestEventRefs,
+    lastRecords,
     normalize,
     normalizeRoute,
     playerDeepLinkKey,
@@ -440,6 +632,7 @@
     rankPlayers,
     routeFromUrl,
     seasonStats,
+    sampleSizeLabel,
     stableEventKey,
     stableHash,
     urlForRoute,

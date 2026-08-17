@@ -298,4 +298,66 @@ $('statsClear').onclick=clearFilters;
 ['eventSeason','eventType','eventLeague','eventTrack','eventComp'].forEach(id=>$(id).addEventListener('change',persistHistoryContext));$('eventQ').addEventListener('input',persistHistoryContext);$('eventMore').addEventListener('click',persistHistoryContext);
 ['cmpSeason','cmpLeague','cmpComp','cmpTrack'].forEach(id=>$(id).addEventListener('change',persistHistoryContext));$('runCompare').addEventListener('click',()=>setTimeout(persistHistoryContext,0));
 
+// ===== v4.4: profil zawodnika, filtry kaskadowe i analiza progu =====
+let playerView='results',rowHomeAwayMap={},teamClassification={events:0,classified:0,rows:0,classifiedRows:0};
+
+const _buildEventIndexV44=buildEventIndex;
+buildEventIndex=function(){
+  _buildEventIndexV44();rowHomeAwayMap={};teamClassification={events:0,classified:0,rows:0,classifiedRows:0};
+  for(const y of Object.keys(DB.years)){const rows=DB.years[y],sides=Array(rows.length).fill('UNKNOWN');rowHomeAwayMap[y]=sides;
+    for(const [start,count] of DB.events[y]||[]){const eventRows=rows.slice(start,start+count),first=eventRows[0];if(!first||!val(first[5])||!val(first[6])||!val(first[7]))continue;
+      teamClassification.events++;teamClassification.rows+=count;
+      const classified=CORE.classifyTeamEvent(eventRows.map(row=>({points:val(row[1]),home:val(row[5]),away:val(row[6]),score:val(row[7])})),{home:val(first[5]),away:val(first[6]),score:val(first[7])});
+      if(!classified.classified)continue;teamClassification.classified++;teamClassification.classifiedRows+=count;classified.sides.forEach((side,index)=>{sides[start+index]=side});
+    }
+  }
+};
+
+metricRecords=function(rows){return (rows||[]).map(([season,row,index],fallback)=>{const rowIndex=Number.isInteger(index)?index:fallback,ei=eventFromRow(season,rowIndex);return {season,points:val(row[1]),heats:val(row[2]),league:val(row[8]),track:val(row[9]),competition:val(row[10]),home:val(row[5]),away:val(row[6]),score:val(row[7]),round:val(row[11]),homeAway:rowHomeAwayMap[season]?.[rowIndex]||'UNKNOWN',order:rowIndex,rowIndex,eventKey:ei===null?'':eventRefKeys.get(`${season}:${ei}`)||'',ref:[season,row,rowIndex]}})};
+
+function playerFilterValues(){return {season:$('season').value,league:$('league').value,competition:$('comp').value,track:$('track').value,search:$('within').value}}
+function setSelectOptions(id,values,label,current){const node=$(id),safe=[...values];if(current&&!safe.includes(current))safe.unshift(current);node.innerHTML=`<option value="">${esc(label)}</option>`+safe.map(value=>`<option value="${esc(value)}">${esc(value)}${value===current&&!values.includes(value)?' • poza zakresem':''}</option>`).join('');node.value=current||''}
+function refreshPlayerFilterOptions(){if(currentPid===null)return;const filters=playerFilterValues(),available=CORE.cascadingFilterOptions(metricRecords(currentAll),filters);setSelectOptions('season',available.season,'Wszystkie sezony',filters.season);setSelectOptions('league',available.league,'Wszystkie ligi / kraje',filters.league);setSelectOptions('comp',available.competition,'Wszystkie rozgrywki',filters.competition);setSelectOptions('track',available.track,'Wszystkie tory',filters.track)}
+fillFilters=function(){['season','league','comp','track'].forEach(id=>$(id).value='');$('within').value='';refreshPlayerFilterOptions()};
+
+playerScope=function(){const parts=[$('season').value,$('league').value,$('comp').value,$('track').value,$('within').value&&`„${$('within').value.trim()}”`].filter(Boolean);return parts.length?parts.join(' • '):'Cała kariera'};
+
+function setPlayerView(view,{historyUpdate=true}={}){playerView=['results','stats','threshold'].includes(view)?view:'results';$('resultsSection').classList.toggle('hidden',playerView!=='results');$('playerStatsView').classList.toggle('hidden',playerView!=='stats');$('thresholdView').classList.toggle('hidden',playerView!=='threshold');$('playerTabs').querySelectorAll('[data-player-view]').forEach(button=>{const active=button.dataset.playerView===playerView;button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active))});if(playerView==='threshold')renderThreshold();if(historyUpdate&&!routeApplying)persistHistoryContext()}
+function hidePlayerV44(){$('playerNav').classList.add('hidden');$('playerStatsView').classList.add('hidden');$('thresholdView').classList.add('hidden')}
+
+applyFilters=function(){if(currentPid===null)return;shown=60;const model=CORE.filterRecords(metricRecords(currentAll),playerFilterValues());filtered=model.map(record=>record.ref);filtered.sort((a,b)=>sortMode==='old'?((+a[0]-+b[0])||(a[2]-b[2])):((+b[0]-+a[0])||(a[2]-b[2])));refreshPlayerFilterOptions();renderStats();renderPlayerAnalytics();renderResults();$('playerScope').textContent=playerScope();renderThreshold()};
+
+function thresholdRecords(){const place=$('thresholdPlace').value;return CORE.filterRecords(metricRecords(filtered),{homeAway:place})}
+function thresholdNumber(value,digits=1){return value===null||value===undefined?'—':Number(value).toLocaleString('pl-PL',{minimumFractionDigits:digits,maximumFractionDigits:digits})}
+function thresholdChart(analysis){if(!analysis.sample)return '<div class="chartEmpty">Brak liczbowych wyników do narysowania wykresu.</div>';const items=analysis.results,width=720,height=250,left=38,right=18,top=20,bottom=35,plotW=width-left-right,plotH=height-top-bottom,max=Math.max(analysis.threshold,...items.map(item=>item.value),1),min=Math.min(0,analysis.threshold,...items.map(item=>item.value)),range=Math.max(1,max-min),x=index=>left+(items.length===1?plotW/2:index*plotW/(items.length-1)),y=value=>top+(max-value)*plotH/range,thresholdY=y(analysis.threshold);let svg=`<svg class="thresholdChart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Kolejne wyniki względem progu ${analysis.threshold}">`;for(let i=0;i<=4;i++){const value=max-(range*i/4),gy=top+i*plotH/4;svg+=`<line class="chartGrid" x1="${left}" y1="${gy}" x2="${width-right}" y2="${gy}"></line><text class="chartAxis" x="${left-6}" y="${gy+4}" text-anchor="end">${thresholdNumber(value,1)}</text>`}svg+=`<line class="thresholdLine" x1="${left}" y1="${thresholdY}" x2="${width-right}" y2="${thresholdY}"></line><text class="chartAxis" x="${width-right}" y="${Math.max(12,thresholdY-5)}" text-anchor="end">próg ${thresholdNumber(analysis.threshold,1)}</text>`;if(items.length>1)svg+=`<path class="resultLine" d="${items.map((item,index)=>`${index?'L':'M'} ${x(index)} ${y(item.value)}`).join(' ')}"></path>`;items.forEach((item,index)=>{svg+=`<circle class="${item.outcome.toLowerCase()}Point" cx="${x(index)}" cy="${y(item.value)}" r="5"><title>${item.record.season} • ${thresholdNumber(item.value,1)} pkt • ${item.outcome}</title></circle>`});return svg+'</svg>'}
+function renderThreshold(){if(currentPid===null||!$('thresholdOutput'))return;const line=$('thresholdLine').value,lastN=+$('thresholdLast').value,pointsMode=$('thresholdPoints').value,analysis=CORE.analyzeThreshold(thresholdRecords(),line,{lastN,pointsMode}),outcome=(name,count,pct)=>`<div class="thresholdOutcome ${name.toLowerCase()}"><strong>${name}</strong><b>${count}/${analysis.sample}</b><span>${thresholdNumber(pct,1)}%</span></div>`,metric=(label,value,digits=1)=>`<div class="thresholdMetric"><strong>${thresholdNumber(value,digits)}</strong><span>${label}</span></div>`;
+  if(analysis.threshold===null){$('thresholdOutput').innerHTML='<div class="panel empty">Wpisz prawidłową wartość progu.</div>';return}
+  const list=[...analysis.results].reverse().map(item=>{const r=item.record,click=item.record.eventKey?' clickable':'';return `<article class="thresholdRecord${click}" ${item.record.eventKey?`data-threshold-event="${esc(item.record.eventKey)}"`:''}><div><h4>${esc(r.season)} • ${esc(r.track||r.competition||r.league||'Wynik')}</h4><p>${esc([r.league,r.competition,r.home&&r.away?`${r.home} – ${r.away}`:'',r.homeAway==='HOME'?'dom':r.homeAway==='AWAY'?'wyjazd':''].filter(Boolean).join(' • '))}</p></div><div class="thresholdValue"><b>${esc(r.points||'—')} pkt</b><span class="thresholdBadge ${item.outcome.toLowerCase()}">${item.outcome} ${thresholdNumber(analysis.threshold,1)}</span></div></article>`}).join('');
+  $('thresholdOutput').innerHTML=`<div class="panel"><div class="comparisonScope">Analiza progu: ${thresholdNumber(analysis.threshold,1)} pkt • ${esc(playerScope())}</div><div class="thresholdSummary">${outcome('OVER',analysis.over,analysis.overPct)}${outcome('UNDER',analysis.under,analysis.underPct)}${outcome('PUSH',analysis.push,analysis.pushPct)}</div><div class="thresholdSample">Próba: <b>${analysis.sample} startów</b> • ${analysis.sampleLabel}</div><div class="thresholdMetrics">${metric('średnia',analysis.mean)}${metric('mediana',analysis.median)}${metric('minimum',analysis.min)}${metric('maksimum',analysis.max)}${metric('średnia biegowa',analysis.heatAverage,3)}${metric('śr. liczba biegów',analysis.averageHeats,2)}${metric('odchylenie standardowe',analysis.standardDeviation,2)}${metric('rozpoznane biegi',analysis.heats,0)}</div><div class="chartHeading"><h3>Kolejne wyniki i linia progu</h3></div><div class="chartBox">${thresholdChart(analysis)}</div><p class="thresholdDisclaimer">To historyczny opis próby, nie prognoza ani rekomendacja zakładu. Przy opcji „Punkty + bonusy” niejednoznaczne zapisy są pomijane.</p></div><div class="thresholdListTitle">Rekordy użyte do analizy</div>${list||'<div class="panel empty">Brak wiarygodnych wyników liczbowych dla wybranego zakresu.</div>'}`;
+  $('thresholdOutput').querySelectorAll('[data-threshold-event]').forEach(card=>card.onclick=()=>{const ref=eventKeyMap.get(card.dataset.thresholdEvent);if(ref)openEventDetail(ref[0],ref[1],'profile')});
+  $('quickThresholds').querySelectorAll('button').forEach(button=>button.classList.toggle('active',Number(button.dataset.line)===analysis.threshold));
+}
+
+const _selectPlayerV44=selectPlayer;
+selectPlayer=function(pid){playerView='results';const result=_selectPlayerV44(pid);$('playerNav').classList.remove('hidden');setPlayerView('results',{historyUpdate:false});$('playerScope').textContent=playerScope();return result};
+const _goHomeV44=goHome;goHome=function(){hidePlayerV44();return _goHomeV44()};
+const _openEventsV44=openEvents;openEvents=function(){hidePlayerV44();return _openEventsV44()};
+const _openCompareV44=openCompare;openCompare=function(pid=null){hidePlayerV44();return _openCompareV44(pid)};
+const _openEventDetailV44=openEventDetail;openEventDetail=function(y,ei,from='events'){hidePlayerV44();return _openEventDetailV44(y,ei,from)};
+
+const _currentRouteV44=currentRoute;
+currentRoute=function(){const route=_currentRouteV44();if(route.view!=='player')return route;return {...route,profileView:playerView,threshold:$('thresholdLine').value,season:$('season').value,league:$('league').value,competition:$('comp').value,track:$('track').value,homeAway:$('thresholdPlace').value,lastN:+$('thresholdLast').value,pointsMode:$('thresholdPoints').value}};
+const _captureViewContextV44=captureViewContext;
+captureViewContext=function(){const context=_captureViewContextV44();if(context.route.view==='player'){context.controls={...(context.controls||{}),...controlValues(['thresholdLine','thresholdPlace','thresholdLast','thresholdPoints'])};context.playerView=playerView}return context};
+const _applyRouteV44=applyRoute;
+applyRoute=async function(route,context=null){await _applyRouteV44(route,context);const next=CORE.normalizeRoute(route);if(next.view!=='player'||currentPid===null)return;setControlValues({season:next.season,league:next.league,comp:next.competition,track:next.track,thresholdLine:next.threshold??'8,5',thresholdPlace:next.homeAway,thresholdLast:String(next.lastN||0),thresholdPoints:next.pointsMode});if(context?.controls)setControlValues(context.controls);applyFilters();setPlayerView(context?.playerView||next.profileView,{historyUpdate:false})};
+
+$('quickThresholds').innerHTML=[5.5,6.5,7.5,8.5,9.5,10.5,11.5].map(line=>`<button type="button" data-line="${line}">${String(line).replace('.',',')}</button>`).join('');
+$('quickThresholds').querySelectorAll('button').forEach(button=>button.onclick=()=>{$('thresholdLine').value=String(button.dataset.line).replace('.',',');renderThreshold();persistHistoryContext()});
+$('playerTabs').querySelectorAll('[data-player-view]').forEach(button=>button.onclick=()=>setPlayerView(button.dataset.playerView));
+['season','league','comp','track'].forEach(id=>$(id).addEventListener('change',()=>{applyFilters();persistHistoryContext()}));
+$('within').addEventListener('input',()=>{applyFilters();persistHistoryContext()});
+['thresholdLine','thresholdPlace','thresholdLast','thresholdPoints'].forEach(id=>$(id).addEventListener(id==='thresholdLine'?'input':'change',()=>{renderThreshold();persistHistoryContext()}));
+$('playerShare').onclick=()=>{if(currentPid!==null)void shareUrl(`Wyniki: ${DB.players[currentPid][0]}`,CORE.urlForRoute(location.href,currentRoute()))};
+
 startup();

@@ -234,3 +234,91 @@ test("latest events reverse sheet order inside the newest season", () => {
 
   assert.deepEqual(latest.map((event) => event.key), ["last", "middle", "first"]);
 });
+
+const thresholdRecords = [
+  { id: "old", season: "2024", order: 1, league: "Polska", track: "Wrocław", competition: "Liga", homeAway: "AWAY", points: "7", heats: "2,2,2,1" },
+  { id: "middle", season: "2025", order: 2, league: "Polska", track: "Lublin", competition: "Liga", homeAway: "HOME", points: "8", heats: "2,2,2,2" },
+  { id: "new", season: "2026", order: 3, league: "Polska", track: "Wrocław", competition: "Liga", homeAway: "AWAY", points: "10+2", heats: "3,3,2*,2" },
+  { id: "dnf", season: "2026", order: 4, league: "Szwecja", track: "Malilla", competition: "Liga", homeAway: "UNKNOWN", points: "d", heats: "d" },
+];
+
+test("threshold analysis counts over and under 8.5", () => {
+  const result = core.analyzeThreshold(thresholdRecords, 8.5);
+  assert.equal(result.sample, 3);
+  assert.equal(result.over, 1);
+  assert.equal(result.under, 2);
+  assert.ok(Math.abs(result.overPct - 100 / 3) < 1e-12);
+});
+
+test("integer threshold reports push separately", () => {
+  const result = core.analyzeThreshold(thresholdRecords, 8);
+  assert.deepEqual([result.over, result.under, result.push], [1, 1, 1]);
+});
+
+test("points and points plus bonus use the requested settlement", () => {
+  assert.equal(core.analyzeThreshold([thresholdRecords[2]], 11, { pointsMode: "points" }).under, 1);
+  assert.equal(core.analyzeThreshold([thresholdRecords[2]], 11, { pointsMode: "pointsBonus" }).over, 1);
+  assert.equal(core.analyzeThreshold([{ points: "3 + 1 miejsce w finale" }], 2, { pointsMode: "pointsBonus" }).sample, 0);
+});
+
+test("threshold median and population standard deviation are deterministic", () => {
+  const result = core.analyzeThreshold(thresholdRecords, 8.5);
+  assert.equal(result.median, 8);
+  assert.ok(Math.abs(result.standardDeviation - Math.sqrt(14 / 9)) < 1e-12);
+});
+
+test("last 5 and last 10 are selected only after the supplied filters", () => {
+  const records = Array.from({ length: 12 }, (_, index) => ({ season: "2026", order: index, points: String(index) }));
+  assert.deepEqual(core.analyzeThreshold(records, 0, { lastN: 5 }).results.map((item) => item.value), [7, 8, 9, 10, 11]);
+  assert.deepEqual(core.analyzeThreshold(records, 0, { lastN: 10 }).results.map((item) => item.value), [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  const filtered = core.filterRecords(thresholdRecords, { league: "Polska", track: "Wrocław" });
+  assert.equal(core.analyzeThreshold(filtered, 8.5, { lastN: 5 }).sample, 2);
+});
+
+test("league, track and their combination filter the threshold dataset", () => {
+  assert.equal(core.filterRecords(thresholdRecords, { league: "Polska" }).length, 3);
+  assert.equal(core.filterRecords(thresholdRecords, { track: "Wrocław" }).length, 2);
+  assert.deepEqual(core.filterRecords(thresholdRecords, { league: "Polska", track: "Wrocław" }).map((item) => item.id), ["old", "new"]);
+});
+
+test("home, away, unknown and away plus track are explicit", () => {
+  assert.deepEqual(core.filterRecords(thresholdRecords, { homeAway: "HOME" }).map((item) => item.id), ["middle"]);
+  assert.deepEqual(core.filterRecords(thresholdRecords, { homeAway: "AWAY" }).map((item) => item.id), ["old", "new"]);
+  assert.deepEqual(core.filterRecords(thresholdRecords, { homeAway: "UNKNOWN" }).map((item) => item.id), ["dnf"]);
+  assert.deepEqual(core.filterRecords(thresholdRecords, { homeAway: "AWAY", track: "Wrocław" }).map((item) => item.id), ["old", "new"]);
+});
+
+test("team side is classified only when a unique score-confirmed split exists", () => {
+  const rows = [10, 9, 8, 7, 6, 5, 11, 10, 9, 8, 7, 6].map((points) => ({ points: String(points) }));
+  const classified = core.classifyTeamEvent(rows, { home: "A", away: "B", score: "45-51" });
+  assert.equal(classified.classified, true);
+  assert.deepEqual(classified.sides, ["HOME", "HOME", "HOME", "HOME", "HOME", "HOME", "AWAY", "AWAY", "AWAY", "AWAY", "AWAY", "AWAY"]);
+  assert.equal(core.classifyTeamEvent(rows, { home: "A", away: "B", score: "40-40" }).classified, false);
+});
+
+test("cascading filter options come from the player dataset and other active filters", () => {
+  const options = core.cascadingFilterOptions(thresholdRecords, { league: "Polska", season: "2026" });
+  assert.deepEqual(options.track, ["Wrocław"]);
+  assert.deepEqual(options.competition, ["Liga"]);
+  assert.deepEqual(options.league, ["Polska", "Szwecja"]);
+  assert.equal(options.track.includes("Malilla"), false);
+});
+
+test("results, statistics and threshold can consume the identical filtered array", () => {
+  const filtered = core.filterRecords(thresholdRecords, { league: "Polska", track: "Wrocław" });
+  assert.equal(core.playerMetric(filtered).starts, filtered.length);
+  assert.equal(core.analyzeThreshold(filtered, 8.5).sample, filtered.length);
+});
+
+test("threshold deep link round-trips stable player key and core analysis filters", () => {
+  const url = core.urlForRoute("https://wyniki-zuzlowe.vercel.app/", {
+    view: "player", playerKey: "Bartosz Zmarzlik", profileView: "threshold",
+    threshold: "8.5", league: "Polska", track: "Wrocław", homeAway: "AWAY", lastN: 10,
+  });
+  const route = core.routeFromUrl(url);
+  assert.equal(route.playerKey, "bartosz zmarzlik");
+  assert.equal(route.profileView, "threshold");
+  assert.equal(route.track, "Wrocław");
+  assert.equal(route.homeAway, "AWAY");
+  assert.equal(route.lastN, 10);
+});

@@ -1,4 +1,4 @@
-const CACHE_NAME = "wz-v4-3-20260817-analytics-v1";
+const CACHE_NAME = "wz-v4-4-20260817-threshold-v1";
 const APP_SHELL = [
   "./",
   "index.html",
