@@ -9,6 +9,7 @@
     "https://raw.githubusercontent.com/cys22-web/wyniki-zuzlowe-db/main/db/version.json";
   const DB_URL =
     "https://raw.githubusercontent.com/cys22-web/wyniki-zuzlowe-db/main/db/latest.wzdb";
+  const DEFAULT_CHECK_INTERVAL_MS = 15 * 60 * 1000;
 
   function validHash(value) {
     return typeof value === "string" && /^[0-9a-f]{64}$/i.test(value);
@@ -21,8 +22,12 @@
     return version;
   }
 
-  async function fetchVersion(fetchImpl = fetch) {
-    const response = await fetchImpl(VERSION_URL, { cache: "no-store" });
+  function versionUrl(checkToken = Date.now()) {
+    return `${VERSION_URL}?check=${encodeURIComponent(String(checkToken))}`;
+  }
+
+  async function fetchVersion(fetchImpl = fetch, checkToken = Date.now()) {
+    const response = await fetchImpl(versionUrl(checkToken), { cache: "no-store" });
     if (!response.ok) {
       throw new Error(`Nie można sprawdzić wersji bazy (${response.status}).`);
     }
@@ -41,6 +46,21 @@
       !validHash(localRecord.wzdb_sha256) ||
       localRecord.wzdb_sha256.toLowerCase() !== version.wzdb_sha256.toLowerCase()
     );
+  }
+
+  function shouldCheckVersion({
+    online = true,
+    visible = true,
+    force = false,
+    now = Date.now(),
+    lastChecked = null,
+    minIntervalMs = DEFAULT_CHECK_INTERVAL_MS,
+  } = {}) {
+    if (!online || !visible) return false;
+    if (force) return true;
+    const checkedAt =
+      typeof lastChecked === "number" ? lastChecked : Date.parse(lastChecked || "");
+    return !Number.isFinite(checkedAt) || now - checkedAt >= minIntervalMs;
   }
 
   async function sha256Hex(bytes, cryptoImpl = globalThis.crypto) {
@@ -66,6 +86,46 @@
       throw new Error("Pobrana baza ma nieprawidłową sumę SHA-256.");
     }
     return bytes;
+  }
+
+  async function synchronizeDatabase({
+    localRecord = null,
+    fetchVersionImpl = fetchVersion,
+    downloadDatabaseImpl = downloadDatabase,
+    parseDatabase,
+    persistDatabase,
+    activateDatabase = async () => {},
+    rollbackDatabase = async () => {},
+    onStage = () => {},
+  } = {}) {
+    if (typeof parseDatabase !== "function" || typeof persistDatabase !== "function") {
+      throw new TypeError("Synchronizacja WZDB wymaga parsera i magazynu danych.");
+    }
+    await onStage("checking");
+    const version = await fetchVersionImpl();
+    await onStage("checked", { version });
+    if (!needsDatabaseUpdate(localRecord, version)) {
+      return { updated: false, version, bytes: null, database: null };
+    }
+
+    await onStage("downloading", { version });
+    const bytes = await downloadDatabaseImpl(version);
+    await onStage("parsing", { version, bytes });
+    const database = await parseDatabase(bytes, version);
+    await onStage("persisting", { version, bytes, database });
+    await persistDatabase(database, version, bytes);
+    try {
+      await onStage("activating", { version, database });
+      await activateDatabase(database, version);
+    } catch (error) {
+      try {
+        await rollbackDatabase(error);
+      } catch (rollbackError) {
+        console.error("Nie udało się przywrócić poprzedniej bazy WZDB.", rollbackError);
+      }
+      throw error;
+    }
+    return { updated: true, version, bytes, database };
   }
 
   function formatLocalDateTime(value) {
@@ -104,6 +164,7 @@
   }
 
   return {
+    DEFAULT_CHECK_INTERVAL_MS,
     VERSION_URL,
     DB_URL,
     databaseUrl,
@@ -113,6 +174,9 @@
     formatLocalDateTime,
     needsDatabaseUpdate,
     sha256Hex,
+    shouldCheckVersion,
+    synchronizeDatabase,
     validateVersion,
+    versionUrl,
   };
 });

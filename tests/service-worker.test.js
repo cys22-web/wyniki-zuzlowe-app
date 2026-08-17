@@ -20,8 +20,8 @@ function serviceWorkerContext() {
         put: async () => {},
       }),
     },
-    fetch: async (request) => {
-      fetches.push(request);
+    fetch: async (request, options) => {
+      fetches.push({ request, options });
       return { ok: true, clone() { return this; } };
     },
     self: {
@@ -71,5 +71,6 @@ test("service worker sends WZDB directly to network with the original request", 
   await responsePromise;
 
   assert.equal(fetches.length, 1);
-  assert.equal(fetches[0], request);
+  assert.equal(fetches[0].request, request);
+  assert.equal(fetches[0].options.cache, "no-store");
 });

@@ -26,7 +26,9 @@ for (const asset of [
 const app = read("app.js");
 assert.match(app, /UPDATE\.fetchVersion\(\)/);
 assert.match(app, /UPDATE\.downloadDatabase\(version\)/);
-assert.match(app, /await saveCustomDB\([\s\S]*await activateUpdatedDB/);
+assert.match(app, /UPDATE\.synchronizeDatabase/);
+assert.match(app, /window\.addEventListener\('online'/);
+assert.match(app, /document\.addEventListener\('visibilitychange'/);
 assert.match(app, /renderLatestEvents/);
 assert.match(app, /renderPlayerAnalytics/);
 assert.match(app, /renderCommonEvents/);
@@ -58,7 +60,7 @@ assert.equal(core.latestEventRefs([
 
 const serviceWorker = read("sw.js");
 assert.match(serviceWorker, /isDatabaseRequest/);
-assert.match(serviceWorker, /event\.respondWith\(fetch\(event\.request\)\)/);
+assert.match(serviceWorker, /event\.respondWith\(fetch\(event\.request, \{ cache: "no-store" \}\)\)/);
 assert.match(serviceWorker, /skipWaiting/);
 assert.match(serviceWorker, /clients\.claim/);
 assert.match(serviceWorker, /app-core\.js/);

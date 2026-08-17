@@ -1,4 +1,4 @@
-const CACHE_NAME = "wz-v4-6-20260817-events-v1";
+const CACHE_NAME = "wz-v4-6-20260817-db-refresh-v2";
 const APP_SHELL = [
   "./",
   "index.html",
@@ -62,7 +62,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
   if (isDatabaseRequest(url)) {
-    event.respondWith(fetch(event.request));
+    event.respondWith(fetch(event.request, { cache: "no-store" }));
     return;
   }
 
