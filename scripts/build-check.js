@@ -66,7 +66,8 @@ assert.match(serviceWorker, /clients\.claim/);
 assert.match(serviceWorker, /app-core\.js/);
 assert.match(serviceWorker, /wz-v4-7-/);
 assert.match(app, /eventDateForRow/);
-assert.match(app, /S\(row\[13\]\)/);
+assert.match(app, /S\(row\[0\]\)\],key=/);
+assert.doesNotMatch(app, /S\(row\[13\]\)\],key=/);
 assert.match(app, /thresholdHeats/);
 
 console.log("Static PWA build check passed.");

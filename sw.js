@@ -1,4 +1,4 @@
-const CACHE_NAME = "wz-v4-7-20260820-event-dates-tracks-v1";
+const CACHE_NAME = "wz-v4-7-20260820-start-number-fix-v2";
 const APP_SHELL = [
   "./",
   "index.html",

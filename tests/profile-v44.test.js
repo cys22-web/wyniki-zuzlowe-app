@@ -90,7 +90,30 @@ test("v4.7 exposes dates, heats, start numbers and advanced track controls", () 
   assert.match(app, /Sprzeczne eventDate w fragmentach wydarzenia/);
   assert.match(app, /thresholdHeats/);
   assert.match(app, /Numer startowy/);
-  assert.match(app, /S\(row\[13\]\)/);
   assert.match(app, /tracks:\[\.\.\.advancedTrackSelection\]/);
   assert.match(app, /CORE\.sortPlayerResults\(analysis\.results/);
+});
+
+test("local PL2 import takes the start number from A without shifting existing fields", () => {
+  const importer = app.match(/async function importWorkbook[\s\S]*?async function handleFile/)[0];
+  assert.match(importer, /const name=clean\(row\[1\]\)/);
+  assert.match(
+    importer,
+    /const rec=\[pid,S\(row\[2\]\),S\(row\[3\]\),S\(row\[4\]\),S\(row\[5\]\),S\(row\[6\]\),S\(row\[7\]\),S\(row\[8\]\),S\(row\[9\]\),S\(row\[10\]\),S\(row\[11\]\),S\(row\[12\]\),S\(row\[14\]\),S\(row\[15\]\),S\(row\[0\]\)\]/
+  );
+  assert.match(
+    importer,
+    /key=\[rec\[5\],rec\[6\],rec\[7\],rec\[8\],rec\[9\],rec\[10\],rec\[11\],rec\[12\]\]\.join\('\|'\)/
+  );
+  assert.doesNotMatch(importer, /S\(row\[13\]\)\],key=/);
+});
+
+test("legacy records and empty start numbers do not render an empty badge", () => {
+  const valueExpression = app.match(/val=(i=>i\?STR\[i\]:'')/)[1];
+  const context = { STR: ["", "95"] };
+  vm.createContext(context);
+  assert.equal(vm.runInContext(`(${valueExpression})(undefined)`, context), "");
+  assert.equal(vm.runInContext(`(${valueExpression})(0)`, context), "");
+  assert.equal(vm.runInContext(`(${valueExpression})(1)`, context), "95");
+  assert.match(app, /startNumber\?` <span class="startNumber">/);
 });

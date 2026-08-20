@@ -33,13 +33,17 @@ for (const rows of Object.values(database.years || {})) {
     }
     if (row.length === 15) {
       assert.ok(row[14] === null || Number.isInteger(row[14]), "Start number is not an interned string id");
-      if (row[14] !== null && database.strings[row[14]]) recordsWithStartNumber += 1;
+      const startNumber = row[14] === null ? "" : database.strings[row[14]] || "";
+      if (startNumber) {
+        assert.notEqual(startNumber, "2026", "Season from Excel column N was exported as a start number");
+        recordsWithStartNumber += 1;
+      }
     }
     totalRecords += 1;
   }
 }
 assert.equal(totalRecords, database.stats.rows, "Record validation did not cover the database");
-assert.ok(recordsWithStartNumber > 0, "No start numbers were exported from Excel column N");
+assert.ok(recordsWithStartNumber > 0, "No start numbers were exported from Excel column A");
 
 const playerIds = database.players
   .map((player, id) => [player, id])
