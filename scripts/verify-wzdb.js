@@ -22,6 +22,25 @@ const database = JSON.parse(zlib.gunzipSync(bytes).toString("utf8"));
 assert.equal(database.version, 4);
 assert.equal(database.strings[0], "");
 
+let recordsWithStartNumber = 0;
+let totalRecords = 0;
+for (const rows of Object.values(database.years || {})) {
+  for (const row of rows) {
+    assert.ok(row.length >= 14, "Legacy record fields 0..13 are missing");
+    assert.ok(row.length <= 15, "Unexpected fields after optional start number");
+    for (const value of row.slice(0, 14)) {
+      assert.ok(value === null || Number.isInteger(value), "Legacy record field is not an interned string id");
+    }
+    if (row.length === 15) {
+      assert.ok(row[14] === null || Number.isInteger(row[14]), "Start number is not an interned string id");
+      if (row[14] !== null && database.strings[row[14]]) recordsWithStartNumber += 1;
+    }
+    totalRecords += 1;
+  }
+}
+assert.equal(totalRecords, database.stats.rows, "Record validation did not cover the database");
+assert.ok(recordsWithStartNumber > 0, "No start numbers were exported from Excel column N");
+
 const playerIds = database.players
   .map((player, id) => [player, id])
   .filter(([player]) => player[3] === "tyler haupt")
@@ -91,10 +110,13 @@ let logicalEventCount = 0;
 let logicalMultiTeamEvents = 0;
 const mergedEventExamples = [];
 let hallstavikDivisionOne = null;
+let eventDateStats2026 = null;
 for (const [season, refs] of Object.entries(database.events || {})) {
   const rows = database.years[season];
-  const physical = refs.map(([start, count]) => {
+  const physical = refs.map(([start, count, fragmentCount, teams, eventDateIndex]) => {
     const row = rows[start];
+    const eventDate = Number.isInteger(eventDateIndex) ? database.strings[eventDateIndex] || null : null;
+    if (eventDate) assert.match(eventDate, /^\d{4}-\d{2}-\d{2}$/, "Invalid ISO event date");
     return {
       start,
       count,
@@ -106,6 +128,10 @@ for (const [season, refs] of Object.entries(database.events || {})) {
       track: database.strings[row[9]] || "",
       competition: database.strings[row[10]] || "",
       round: database.strings[row[11]] || "",
+      capacity: database.strings[row[12]] || "",
+      fragmentCount: Number(fragmentCount) || 1,
+      teams: Array.isArray(teams) ? teams : [],
+      eventDate,
     };
   });
   const logical = core.mergeAdjacentEvents(physical);
@@ -118,6 +144,41 @@ for (const [season, refs] of Object.entries(database.events || {})) {
     }
   }
   if (season === "2026") {
+    let datedEvents = 0;
+    let unmatchedEvents = 0;
+    let ambiguousEvents = 0;
+    let datedRecords = 0;
+    let unmatchedRecords = 0;
+    let ambiguousRecords = 0;
+    for (const event of logical) {
+      const fragments = physical.filter((fragment) =>
+        fragment.start >= event.start && fragment.start < event.start + event.count
+      );
+      const dates = [...new Set(fragments.map((fragment) => fragment.eventDate).filter(Boolean))];
+      const hasUndatedFragment = fragments.some((fragment) => !fragment.eventDate);
+      if (dates.length > 1 || (dates.length === 1 && hasUndatedFragment)) {
+        ambiguousEvents += 1;
+        ambiguousRecords += event.count;
+      } else if (dates.length === 1) {
+        assert.equal(event.eventDate, dates[0], "Logical event lost an unambiguous date");
+        datedEvents += 1;
+        datedRecords += event.count;
+      } else {
+        assert.equal(event.eventDate, null, "Undated logical event unexpectedly has a date");
+        unmatchedEvents += 1;
+        unmatchedRecords += event.count;
+      }
+    }
+    eventDateStats2026 = {
+      logical_events: logical.length,
+      records: rows.length,
+      dated_events: datedEvents,
+      ambiguous_events: ambiguousEvents,
+      unmatched_events: unmatchedEvents,
+      dated_records: datedRecords,
+      ambiguous_records: ambiguousRecords,
+      unmatched_records: unmatchedRecords,
+    };
     hallstavikDivisionOne = logical.find((event) =>
       event.league === "Szwecja" &&
       event.track === "Hallstavik" &&
@@ -126,6 +187,20 @@ for (const [season, refs] of Object.entries(database.events || {})) {
     ) || hallstavikDivisionOne;
   }
 }
+for (const field of Object.keys(eventDateStats2026)) {
+  assert.equal(database.dateStats[field], eventDateStats2026[field], `database.dateStats.${field} differs`);
+  assert.equal(version.date_stats[field], eventDateStats2026[field], `version.date_stats.${field} differs`);
+}
+assert.equal(database.dateStats.date_map_mapping_keys, 1882);
+assert.equal(database.dateStats.matching_mapping_keys, 1882);
+assert.equal(database.dateStats.stale_mapping_keys, 0);
+assert.equal(eventDateStats2026.dated_events, 1029);
+assert.equal(eventDateStats2026.dated_records, 14720);
+assert.equal(eventDateStats2026.ambiguous_events, 0);
+assert.equal(eventDateStats2026.ambiguous_records, 0);
+assert.match(version.date_map_sha256, /^[0-9a-f]{64}$/);
+assert.equal(version.date_map_sha256, version.event_dates_sha256);
+assert.equal(version.dated_event_fragments, 1882);
 assert.ok(hallstavikDivisionOne, "Hallstavik Division 1 round 13 is missing");
 assert.ok(logicalMultiTeamEvents > 100, "Too few multi-team fragment groups were recognized across WZDB");
 assert.equal(hallstavikDivisionOne.count, 13, "Hallstavik event does not contain all 13 riders");
@@ -162,6 +237,8 @@ assert.ok(Number.isFinite(krosnoMetric.heatAvg), "Krosno heat average is not fin
 console.log(JSON.stringify({
   wzdb_sha256: actualHash,
   stats: database.stats,
+  recordsWithStartNumber,
+  eventDateStats2026,
   tylerHaupt2026Points: points,
   stableEventKeys: eventKeys.size,
   logicalEvents: logicalEventCount,

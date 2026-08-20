@@ -271,11 +271,22 @@
 
   function filterRecords(records, filters = {}) {
     const search = normalize(filters.search);
+    const selectedTracks = new Set(
+      Array.isArray(filters.tracks)
+        ? filters.tracks.map((value) => String(value)).filter(Boolean)
+        : []
+    );
+    const trackMode = filters.trackMode === "exclude" ? "exclude" : "include";
     return (records || []).filter((record) => {
       if (filters.season && String(record.season) !== String(filters.season)) return false;
       if (filters.league && record.league !== filters.league) return false;
       if (filters.competition && record.competition !== filters.competition) return false;
       if (filters.track && record.track !== filters.track) return false;
+      if (selectedTracks.size) {
+        const selected = selectedTracks.has(String(record.track || ""));
+        if (trackMode === "include" && !selected) return false;
+        if (trackMode === "exclude" && selected) return false;
+      }
       if (filters.homeAway && record.homeAway !== filters.homeAway) return false;
       if (search) {
         const haystack = normalize(
@@ -337,11 +348,11 @@
       date: resultDateValue(record),
       chronological: chronologicalValue(record, index),
     }));
-    const useDates = decorated.length > 0 && decorated.every((item) => item.date !== null);
     return decorated
       .sort((a, b) =>
-        (useDates ? (a.date - b.date) * multiplier : 0) ||
         (a.chronological[0] - b.chronological[0]) * multiplier ||
+        (Number(b.date !== null) - Number(a.date !== null)) ||
+        (a.date !== null && b.date !== null ? (a.date - b.date) * multiplier : 0) ||
         (a.chronological[1] - b.chronological[1]) * multiplier ||
         a.index - b.index
       )
@@ -350,9 +361,8 @@
 
   function lastRecords(records, limit) {
     const count = Number(limit) || 0;
-    if (!count) return [...(records || [])];
-    return sortPlayerResults(records, "old")
-      .slice(-count)
+    if (!count) return sortPlayerResults(records, "old");
+    return sortPlayerResults(records, "new").slice(0, count).reverse();
   }
 
   function median(values) {
@@ -469,7 +479,10 @@
     const all = analyzeThreshold(chronological, threshold, { ...options, lastN: 0 });
     const last5 = analyzeThreshold(records, threshold, { ...options, lastN: 5 });
     const last10 = analyzeThreshold(records, threshold, { ...options, lastN: 10 });
-    const newest = [...all.results].reverse();
+    const newest = sortPlayerResults(
+      all.results.map((item) => ({ ...item, ...item.record })),
+      "new"
+    );
     const outcome = newest[0]?.outcome || null;
     let streak = 0;
     while (streak < newest.length && newest[streak].outcome === outcome) streak += 1;
@@ -594,6 +607,13 @@
       ) end += 1;
 
       const run = source.slice(index, end);
+      const eventDateCandidates = [...new Set(
+        run.map((event) => String(event?.eventDate || "").trim()).filter(Boolean)
+      )];
+      const eventDateConflict = eventDateCandidates.length > 1;
+      const eventDate = run.every((event) => Boolean(String(event?.eventDate || "").trim())) && eventDateCandidates.length === 1
+        ? eventDateCandidates[0]
+        : null;
       const teams = [];
       const seenTeams = new Set();
       for (const event of run) {
@@ -616,6 +636,9 @@
           fragmentCount: run.reduce((sum, event) => sum + Number(event.fragmentCount || 1), 0),
           multiTeam: true,
           teams,
+          eventDate,
+          eventDateConflict,
+          eventDateCandidates: eventDateConflict ? eventDateCandidates : [],
         });
       } else {
         for (const event of run) {
@@ -624,6 +647,9 @@
             fragmentCount: Number(event.fragmentCount || 1),
             multiTeam: Boolean(event.multiTeam),
             teams: Array.isArray(event.teams) ? event.teams : [],
+            eventDate: event.eventDate || null,
+            eventDateConflict: Boolean(event.eventDateConflict),
+            eventDateCandidates: Array.isArray(event.eventDateCandidates) ? event.eventDateCandidates : [],
           });
         }
       }
@@ -661,6 +687,14 @@
       for (const field of ["season", "league", "competition", "track"]) {
         if (route[field]) playerRoute[field] = route[field];
       }
+      if (Array.isArray(route.tracks)) {
+        const tracks = [...new Set(route.tracks.map(String).map((value) => value.trim()).filter(Boolean))];
+        if (tracks.length) {
+          playerRoute.tracks = tracks;
+          playerRoute.trackMode = route.trackMode === "exclude" ? "exclude" : "include";
+          delete playerRoute.track;
+        }
+      }
       if (["HOME", "AWAY"].includes(route.homeAway)) playerRoute.homeAway = route.homeAway;
       if (Number(route.lastN)) playerRoute.lastN = Number(route.lastN);
       if (route.pointsMode === "pointsBonus") playerRoute.pointsMode = "pointsBonus";
@@ -694,6 +728,8 @@
       league: url.searchParams.get("league"),
       competition: url.searchParams.get("competition"),
       track: url.searchParams.get("track"),
+      tracks: (url.searchParams.get("tracks") || "").split(",").filter(Boolean),
+      trackMode: url.searchParams.get("trackMode"),
       homeAway: url.searchParams.get("place"),
       lastN: url.searchParams.get("last"),
       pointsMode: url.searchParams.get("points"),
@@ -705,7 +741,7 @@
     const url = new URL(input, "https://app.invalid/");
     url.searchParams.delete("player");
     url.searchParams.delete("event");
-    for (const name of ["view", "line", "season", "league", "competition", "track", "place", "last", "points"]) {
+    for (const name of ["view", "line", "season", "league", "competition", "track", "tracks", "trackMode", "place", "last", "points"]) {
       url.searchParams.delete(name);
     }
     const normalized = normalizeRoute(route);
@@ -717,6 +753,10 @@
       if (normalized.league) url.searchParams.set("league", normalized.league);
       if (normalized.competition) url.searchParams.set("competition", normalized.competition);
       if (normalized.track) url.searchParams.set("track", normalized.track);
+      if (normalized.tracks?.length) {
+        url.searchParams.set("tracks", normalized.tracks.join(","));
+        url.searchParams.set("trackMode", normalized.trackMode || "include");
+      }
       if (normalized.homeAway) url.searchParams.set("place", normalized.homeAway);
       if (normalized.lastN) url.searchParams.set("last", normalized.lastN);
       if (normalized.pointsMode === "pointsBonus") url.searchParams.set("points", "pointsBonus");
@@ -780,12 +820,7 @@
   }
 
   function latestEventRefs(eventRefs, limit = 10) {
-    return [...(eventRefs || [])]
-      .sort(
-        (a, b) =>
-          Number(b.season) - Number(a.season) || Number(b.order) - Number(a.order)
-      )
-      .slice(0, limit);
+    return sortPlayerResults(eventRefs || [], "new").slice(0, limit);
   }
 
   return {

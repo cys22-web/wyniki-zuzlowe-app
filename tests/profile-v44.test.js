@@ -79,5 +79,18 @@ test("service-worker controller change performs at most one guarded reload", asy
   handlers.controllerchange();
   handlers.controllerchange();
   assert.equal(reloads, 1);
-  assert.equal(storage.get("wz-pwa-controller-reload-v46"), "1");
+  assert.equal(storage.get("wz-pwa-controller-reload-v47"), "1");
+});
+
+test("v4.7 exposes dates, heats, start numbers and advanced track controls", () => {
+  for (const id of ["multiTrackToggle", "multiTrackPanel", "multiTrackSearch", "multiTrackOptions"]) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  assert.match(app, /eventDate:event\?\.eventDate/);
+  assert.match(app, /Sprzeczne eventDate w fragmentach wydarzenia/);
+  assert.match(app, /thresholdHeats/);
+  assert.match(app, /Numer startowy/);
+  assert.match(app, /S\(row\[13\]\)/);
+  assert.match(app, /tracks:\[\.\.\.advancedTrackSelection\]/);
+  assert.match(app, /CORE\.sortPlayerResults\(analysis\.results/);
 });

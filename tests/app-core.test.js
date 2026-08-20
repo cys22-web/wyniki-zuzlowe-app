@@ -190,16 +190,18 @@ test("event key is deterministic, canonical and distinguishes identical occurren
 test("adjacent multi-team fragments become one logical event", () => {
   const base = { season: "2026", league: "Szwecja", track: "Hallstavik", competition: "Division 1", round: "13 runda" };
   const merged = core.mergeAdjacentEvents([
-    { ...base, start: 12690, count: 4, home: "Team Campus Roslagen", away: "", score: "37" },
-    { ...base, start: 12694, count: 3, home: "", away: "Smederna B", score: "29" },
-    { ...base, start: 12697, count: 3, home: "", away: "Gnistorna Malmoe", score: "26" },
-    { ...base, start: 12700, count: 3, home: "", away: "Piraterna B", score: "14" },
+    { ...base, start: 12690, count: 4, home: "Team Campus Roslagen", away: "", score: "37", eventDate: "2026-08-13" },
+    { ...base, start: 12694, count: 3, home: "", away: "Smederna B", score: "29", eventDate: "2026-08-13" },
+    { ...base, start: 12697, count: 3, home: "", away: "Gnistorna Malmoe", score: "26", eventDate: "2026-08-13" },
+    { ...base, start: 12700, count: 3, home: "", away: "Piraterna B", score: "14", eventDate: "2026-08-13" },
   ]);
 
   assert.equal(merged.length, 1);
   assert.equal(merged[0].count, 13);
   assert.equal(merged[0].fragmentCount, 4);
   assert.equal(merged[0].multiTeam, true);
+  assert.equal(merged[0].eventDate, "2026-08-13");
+  assert.equal(merged[0].eventDateConflict, false);
   assert.deepEqual(merged[0].teams.map((team) => team.name), [
     "Team Campus Roslagen", "Smederna B", "Gnistorna Malmoe", "Piraterna B",
   ]);
@@ -352,6 +354,43 @@ test("player results without dates fall back to season and lower Excel rows firs
   ]);
 });
 
+test("conflicting fragment dates are diagnostic and never selected arbitrarily", () => {
+  const base = { season: "2026", league: "Szwecja", track: "Hallstavik", competition: "Division 1", round: "13 runda" };
+  const [event] = core.mergeAdjacentEvents([
+    { ...base, start: 10, count: 3, home: "Team A", away: "", score: "30", eventDate: "2026-08-12" },
+    { ...base, start: 13, count: 3, home: "", away: "Team B", score: "20", eventDate: "2026-08-13" },
+  ]);
+  assert.equal(event.eventDate, null);
+  assert.equal(event.eventDateConflict, true);
+  assert.deepEqual(event.eventDateCandidates, ["2026-08-12", "2026-08-13"]);
+});
+
+test("legacy physical events without optional fields still merge", () => {
+  const base = { season: "2026", league: "Szwecja", track: "Vetlanda", competition: "Division 1", round: "1 runda" };
+  const [event] = core.mergeAdjacentEvents([
+    { ...base, start: 0, count: 2, home: "Team A", away: "", score: "12" },
+    { ...base, start: 2, count: 2, home: "", away: "Team B", score: "10", fragmentCount: 1, teams: [] },
+  ]);
+  assert.equal(event.count, 4);
+  assert.equal(event.fragmentCount, 2);
+  assert.equal(event.eventDate, null);
+  assert.equal(event.eventDateConflict, false);
+});
+
+test("one undated result does not disable event-date ordering for dated results", () => {
+  const records = [
+    { id: "dated-older", season: "2026", eventDate: "2026-08-10", order: 200 },
+    { id: "undated", season: "2026", order: 999 },
+    { id: "dated-newer", season: "2026", eventDate: "2026-08-12", order: 1 },
+  ];
+  assert.deepEqual(core.sortPlayerResults(records, "new").map((record) => record.id), [
+    "dated-newer", "dated-older", "undated",
+  ]);
+  assert.deepEqual(core.lastRecords(records, 2).map((record) => record.id), [
+    "dated-older", "dated-newer",
+  ]);
+});
+
 test("current form selects the newest 5 and 10 starts chronologically", () => {
   const records = Array.from({ length: 12 }, (_, index) => ({
     season: index < 2 ? "2025" : "2026",
@@ -441,6 +480,19 @@ test("league, track and their combination filter the threshold dataset", () => {
   assert.deepEqual(core.filterRecords(thresholdRecords, { league: "Polska", track: "Wrocław" }).map((item) => item.id), ["old", "new"]);
 });
 
+test("multi-track include and exclude combine with season and league", () => {
+  const records = [
+    ...thresholdRecords,
+    { id: "rzeszow", season: "2026", order: 5, league: "Polska", track: "Rzeszów", competition: "Liga", points: "9" },
+  ];
+  assert.deepEqual(core.filterRecords(records, {
+    tracks: ["Wrocław", "Rzeszów"], trackMode: "include",
+  }).map((item) => item.id), ["old", "new", "rzeszow"]);
+  assert.deepEqual(core.filterRecords(records, {
+    season: "2026", league: "Polska", tracks: ["Wrocław"], trackMode: "exclude",
+  }).map((item) => item.id), ["rzeszow"]);
+});
+
 test("home, away, unknown and away plus track are explicit", () => {
   assert.deepEqual(core.filterRecords(thresholdRecords, { homeAway: "HOME" }).map((item) => item.id), ["middle"]);
   assert.deepEqual(core.filterRecords(thresholdRecords, { homeAway: "AWAY" }).map((item) => item.id), ["old", "new"]);
@@ -481,4 +533,15 @@ test("threshold deep link round-trips stable player key and core analysis filter
   assert.equal(route.track, "Wrocław");
   assert.equal(route.homeAway, "AWAY");
   assert.equal(route.lastN, 10);
+});
+
+test("advanced track selection round-trips through a player URL", () => {
+  const url = core.urlForRoute("https://wyniki-zuzlowe.vercel.app/", {
+    view: "player", playerKey: "Bartosz Zmarzlik",
+    tracks: ["Krosno", "Rzeszów", "Lublin"], trackMode: "exclude",
+  });
+  const route = core.routeFromUrl(url);
+  assert.deepEqual(route.tracks, ["Krosno", "Rzeszów", "Lublin"]);
+  assert.equal(route.trackMode, "exclude");
+  assert.equal(route.track, undefined);
 });

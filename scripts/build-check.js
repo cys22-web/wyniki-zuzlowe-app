@@ -42,7 +42,7 @@ assert.match(app, /history\.pushState/);
 assert.match(app, /window\.addEventListener\('popstate'/);
 assert.match(app, /activateUpdatedDB=async function\(db\)[\s\S]*captureViewContext[\s\S]*applyRoute/);
 
-for (const id of ["cmpResultsA", "cmpResultsB", "cmpOverall", "cmpForm", "cmpChart", "cmpSeasons", "commonEvents", "eventTeams"]) {
+for (const id of ["cmpResultsA", "cmpResultsB", "cmpOverall", "cmpForm", "cmpChart", "cmpSeasons", "commonEvents", "eventTeams", "multiTrackPanel", "multiTrackOptions"]) {
   assert.match(html, new RegExp(`id=["']${id}["']`));
 }
 const comparisonOrder = ["cmpResultsA", "cmpResultsB", "cmpOverall", "cmpForm", "cmpChart", "cmpSeasons", "commonEvents"]
@@ -64,6 +64,9 @@ assert.match(serviceWorker, /event\.respondWith\(fetch\(event\.request, \{ cache
 assert.match(serviceWorker, /skipWaiting/);
 assert.match(serviceWorker, /clients\.claim/);
 assert.match(serviceWorker, /app-core\.js/);
-assert.match(serviceWorker, /wz-v4-6-/);
+assert.match(serviceWorker, /wz-v4-7-/);
+assert.match(app, /eventDateForRow/);
+assert.match(app, /S\(row\[13\]\)/);
+assert.match(app, /thresholdHeats/);
 
 console.log("Static PWA build check passed.");
