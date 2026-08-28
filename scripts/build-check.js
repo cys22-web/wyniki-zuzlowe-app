@@ -64,10 +64,12 @@ assert.match(serviceWorker, /event\.respondWith\(fetch\(event\.request, \{ cache
 assert.match(serviceWorker, /skipWaiting/);
 assert.match(serviceWorker, /clients\.claim/);
 assert.match(serviceWorker, /app-core\.js/);
-assert.match(serviceWorker, /wz-v4-7-/);
+assert.match(serviceWorker, /wz-v4-8-/);
 assert.match(app, /eventDateForRow/);
 assert.match(app, /S\(row\[0\]\)\],key=/);
 assert.doesNotMatch(app, /S\(row\[13\]\)\],key=/);
+assert.match(app, /row\[16\]/);
+assert.match(app, /CORE\.resolveEventDate\(eventDateCells\)/);
 assert.match(app, /thresholdHeats/);
 
 console.log("Static PWA build check passed.");

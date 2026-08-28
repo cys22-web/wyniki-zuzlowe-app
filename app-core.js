@@ -15,6 +15,59 @@
       .replace(/\s+/g, " ");
   }
 
+  function eventDateValue(value) {
+    if (value === null || value === undefined || String(value).trim() === "") return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value.toISOString().slice(0, 10);
+    }
+    const text = String(value).trim();
+    if (/^\d+(?:\.\d+)?$/.test(text)) {
+      const serial = Number(text);
+      if (!Number.isFinite(serial)) throw new Error(`Invalid Excel date serial: ${text}`);
+      return new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86400000)
+        .toISOString()
+        .slice(0, 10);
+    }
+    let match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) {
+      const local = text.match(/^(\d{2})[./](\d{2})[./](\d{4})$/);
+      if (local) match = [local[0], local[3], local[2], local[1]];
+    }
+    if (!match) throw new Error(`Unsupported event date: ${text}`);
+    const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (
+      parsed.getUTCFullYear() !== year ||
+      parsed.getUTCMonth() !== month - 1 ||
+      parsed.getUTCDate() !== day
+    ) throw new Error(`Invalid event date: ${text}`);
+    return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+
+  function resolveEventDate(values) {
+    const dates = new Set();
+    const invalidValues = [];
+    for (const item of values || []) {
+      const value = item && typeof item === "object" && "value" in item ? item.value : item;
+      try {
+        const parsed = eventDateValue(value);
+        if (parsed) dates.add(parsed);
+      } catch (error) {
+        invalidValues.push({ value: String(value), error: error.message || String(error) });
+      }
+    }
+    const eventDateCandidates = [...dates].sort();
+    const eventDateConflict = eventDateCandidates.length > 1 || invalidValues.length > 0;
+    return {
+      eventDate: !eventDateConflict && eventDateCandidates.length === 1
+        ? eventDateCandidates[0]
+        : null,
+      eventDateConflict,
+      eventDateCandidates,
+      invalidValues,
+    };
+  }
+
   function basePoints(value) {
     const match = String(value || "")
       .trim()
@@ -611,7 +664,7 @@
         run.map((event) => String(event?.eventDate || "").trim()).filter(Boolean)
       )];
       const eventDateConflict = eventDateCandidates.length > 1;
-      const eventDate = run.every((event) => Boolean(String(event?.eventDate || "").trim())) && eventDateCandidates.length === 1
+      const eventDate = eventDateCandidates.length === 1
         ? eventDateCandidates[0]
         : null;
       const teams = [];
@@ -836,6 +889,7 @@
     commonEvents,
     currentForm,
     eventSignature,
+    eventDateValue,
     formatEventUrl,
     formatPlayerUrl,
     filterRecords,
@@ -851,6 +905,7 @@
     parsePointsBreakdown,
     rankPlayers,
     mergeAdjacentEvents,
+    resolveEventDate,
     routeFromUrl,
     seasonStats,
     sampleSizeLabel,

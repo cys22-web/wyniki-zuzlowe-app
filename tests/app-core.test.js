@@ -365,6 +365,35 @@ test("conflicting fragment dates are diagnostic and never selected arbitrarily",
   assert.deepEqual(event.eventDateCandidates, ["2026-08-12", "2026-08-13"]);
 });
 
+test("source event dates support text, Excel serials, blanks and conflicts", () => {
+  assert.equal(core.eventDateValue("23.08.2026"), "2026-08-23");
+  assert.equal(core.eventDateValue("23/08/2026"), "2026-08-23");
+  assert.equal(core.eventDateValue("2026-08-23"), "2026-08-23");
+  assert.equal(core.eventDateValue(46257), "2026-08-23");
+  assert.equal(core.resolveEventDate(Array(10).fill("23.08.2026")).eventDate, "2026-08-23");
+  assert.equal(core.resolveEventDate(Array(10).fill("")).eventDate, null);
+  assert.equal(core.resolveEventDate([...Array(8).fill("23.08.2026"), "", null]).eventDate, "2026-08-23");
+  assert.deepEqual(
+    core.resolveEventDate(["23.08.2026", "24.08.2026"]),
+    {
+      eventDate: null,
+      eventDateConflict: true,
+      eventDateCandidates: ["2026-08-23", "2026-08-24"],
+      invalidValues: [],
+    }
+  );
+});
+
+test("one dated and one blank fragment preserve the unambiguous date", () => {
+  const base = { season: "2026", league: "Szwecja", track: "Vetlanda", competition: "Division 1", round: "1 runda" };
+  const [event] = core.mergeAdjacentEvents([
+    { ...base, start: 0, count: 2, home: "Team A", away: "", score: "12", eventDate: "2026-08-23" },
+    { ...base, start: 2, count: 2, home: "", away: "Team B", score: "10", eventDate: null },
+  ]);
+  assert.equal(event.eventDate, "2026-08-23");
+  assert.equal(event.eventDateConflict, false);
+});
+
 test("legacy physical events without optional fields still merge", () => {
   const base = { season: "2026", league: "Szwecja", track: "Vetlanda", competition: "Division 1", round: "1 runda" };
   const [event] = core.mergeAdjacentEvents([

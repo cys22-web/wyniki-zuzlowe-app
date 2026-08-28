@@ -159,8 +159,7 @@ for (const [season, refs] of Object.entries(database.events || {})) {
         fragment.start >= event.start && fragment.start < event.start + event.count
       );
       const dates = [...new Set(fragments.map((fragment) => fragment.eventDate).filter(Boolean))];
-      const hasUndatedFragment = fragments.some((fragment) => !fragment.eventDate);
-      if (dates.length > 1 || (dates.length === 1 && hasUndatedFragment)) {
+      if (dates.length > 1) {
         ambiguousEvents += 1;
         ambiguousRecords += event.count;
       } else if (dates.length === 1) {
@@ -195,16 +194,21 @@ for (const field of Object.keys(eventDateStats2026)) {
   assert.equal(database.dateStats[field], eventDateStats2026[field], `database.dateStats.${field} differs`);
   assert.equal(version.date_stats[field], eventDateStats2026[field], `version.date_stats.${field} differs`);
 }
-assert.equal(database.dateStats.date_map_mapping_keys, 1882);
-assert.equal(database.dateStats.matching_mapping_keys, 1882);
-assert.equal(database.dateStats.stale_mapping_keys, 0);
-assert.equal(eventDateStats2026.dated_events, 1029);
-assert.equal(eventDateStats2026.dated_records, 14720);
+assert.equal(eventDateStats2026.dated_events, eventDateStats2026.logical_events);
+assert.equal(eventDateStats2026.dated_records, eventDateStats2026.records);
 assert.equal(eventDateStats2026.ambiguous_events, 0);
 assert.equal(eventDateStats2026.ambiguous_records, 0);
-assert.match(version.date_map_sha256, /^[0-9a-f]{64}$/);
-assert.equal(version.date_map_sha256, version.event_dates_sha256);
-assert.equal(version.dated_event_fragments, 1882);
+assert.equal(eventDateStats2026.unmatched_events, 0);
+assert.equal(eventDateStats2026.unmatched_records, 0);
+assert.equal(database.dateStats.conflicts, 0);
+assert.equal(database.dateStats.events_without_date, 0);
+assert.equal(database.dateStats.records_without_date, 0);
+assert.equal(version.event_date_source, "PL2.xlsm:Q/Data");
+assert.equal(version.dated_event_fragments, database.dateStats.dated_physical_events);
+if (version.date_map_sha256 !== null) {
+  assert.match(version.date_map_sha256, /^[0-9a-f]{64}$/);
+  assert.equal(version.date_map_sha256, version.event_dates_sha256);
+}
 assert.ok(hallstavikDivisionOne, "Hallstavik Division 1 round 13 is missing");
 assert.ok(logicalMultiTeamEvents > 100, "Too few multi-team fragment groups were recognized across WZDB");
 assert.equal(hallstavikDivisionOne.count, 13, "Hallstavik event does not contain all 13 riders");

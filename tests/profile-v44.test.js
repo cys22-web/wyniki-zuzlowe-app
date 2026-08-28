@@ -79,10 +79,10 @@ test("service-worker controller change performs at most one guarded reload", asy
   handlers.controllerchange();
   handlers.controllerchange();
   assert.equal(reloads, 1);
-  assert.equal(storage.get("wz-pwa-controller-reload-v47"), "1");
+  assert.equal(storage.get("wz-pwa-controller-reload-v48"), "1");
 });
 
-test("v4.7 exposes dates, heats, start numbers and advanced track controls", () => {
+test("v4.8 exposes dates, heats, start numbers and advanced track controls", () => {
   for (const id of ["multiTrackToggle", "multiTrackPanel", "multiTrackSearch", "multiTrackOptions"]) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
@@ -106,6 +106,32 @@ test("local PL2 import takes the start number from A without shifting existing f
     /key=\[rec\[5\],rec\[6\],rec\[7\],rec\[8\],rec\[9\],rec\[10\],rec\[11\],rec\[12\]\]\.join\('\|'\)/
   );
   assert.doesNotMatch(importer, /S\(row\[13\]\)\],key=/);
+});
+
+test("local PL2 import resolves eventDate from column Q", () => {
+  const importer = app.match(/async function importWorkbook[\s\S]*?async function handleFile/)[0];
+  assert.match(importer, /row\[16\]/);
+  assert.match(importer, /CORE\.resolveEventDate\(eventDateCells\)/);
+  assert.match(importer, /eventRef\.push\(1,\[\],S\(resolution\.eventDate\)\)/);
+  assert.match(importer, /eventDateDiagnostics:sourceDiagnostics/);
+});
+
+test("local XML reader keeps column references after self-closing cells", () => {
+  const eachRowSource = app.match(/function eachRow\(xml[^\r\n]+/)[0];
+  const context = {
+    result: null,
+    xattr: (attributes, name) => attributes.match(new RegExp(`${name}="([^"]*)"`))?.[1] || "",
+    colIndex: (reference) => reference.charCodeAt(0) - 65,
+    cellValue: (_attributes, body) => body.match(/<v>([^<]*)<\/v>/)?.[1] || "",
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    `${eachRowSource};eachRow('<row r="4"><c r="E4"/><c r="G4"><v>Home</v></c><c r="Q4"><v>46257</v></c></row>',[],4,16,row=>result=row)`,
+    context
+  );
+  assert.equal(context.result[4], "");
+  assert.equal(context.result[6], "Home");
+  assert.equal(context.result[16], "46257");
 });
 
 test("legacy records and empty start numbers do not render an empty badge", () => {
