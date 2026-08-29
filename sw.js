@@ -1,4 +1,4 @@
-const CACHE_NAME = "wz-v4-8-20260828-pl2-event-dates";
+const CACHE_NAME = "wz-v4-9-20260829-stage-a";
 const APP_SHELL = [
   "./",
   "index.html",
