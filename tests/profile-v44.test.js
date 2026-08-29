@@ -91,7 +91,8 @@ test("stage A profile exposes track history and filtered form ranges", () => {
   assert.match(app, /data-track-history/);
   assert.match(app, /CORE\.leagueQuickFilters\(records\)/);
   assert.match(app, /CORE\.formSeries\(records,formChartLimit,formChartMetric\)/);
-  assert.match(app, /eventKeyMap\.get\(point\.dataset\.formEvent\)/);
+  assert.match(app, /CORE\.formChartPointAtX\(series,event\.clientX/);
+  assert.match(app, /eventKeyMap\.get\(item\.eventKey\)/);
 });
 
 test("comparison leads with shared events and keeps full rider result columns", () => {

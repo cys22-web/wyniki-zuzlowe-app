@@ -385,6 +385,47 @@ test("common event balance stays empty when riders have no shared event key", ()
   assert.equal(result.rightAverage, null);
 });
 
+test("dense form chart resolves the clicked position to the matching stable event key", () => {
+  const records = Array.from({ length: 879 }, (_, order) => ({
+    season: "2010",
+    order,
+    points: "8",
+    heats: "3,1,2,2",
+    eventKey: `event-${order}`,
+    track: `Track ${order}`,
+    competition: `Competition ${order}`,
+    round: `${order} runda`,
+  }));
+  Object.assign(records[0], {
+    eventKey: "e2010-23na22wanhs-0",
+    track: "Ostrów Wlkp.",
+    competition: "MDMW",
+    round: "5 runda",
+    heats: "3,3,t,2",
+  });
+  Object.assign(records[8], {
+    eventKey: "e2010-2dz2cgcc0o0-0",
+    track: "Częstochowa",
+    competition: "Liga Juniorów",
+    round: "6 runda",
+  });
+
+  const series = core.formSeries(records, "all", "points");
+  const rect = { left: 100, width: 600 };
+  const geometry = { viewWidth: 720, plotLeft: 38, plotWidth: 664 };
+  const firstPointClientX = rect.left + geometry.plotLeft * rect.width / geometry.viewWidth;
+  const selected = core.formChartPointAtX(series, firstPointClientX, rect, geometry);
+
+  assert.equal(series[0].eventKey, "e2010-23na22wanhs-0");
+  assert.equal(series[0].track, "Ostrów Wlkp.");
+  assert.equal(series[0].competition, "MDMW");
+  assert.equal(series[0].round, "5 runda");
+  assert.equal(series[8].eventKey, "e2010-2dz2cgcc0o0-0");
+  assert.equal(selected, series[0]);
+  assert.equal(selected.eventKey, "e2010-23na22wanhs-0");
+  assert.notEqual(selected.eventKey, "e2010-2dz2cgcc0o0-0");
+});
+
 test("routing state round-trips player and event URLs", () => {
   const base = "https://wyniki-zuzlowe.vercel.app/?legacy=1#old";
   const playerUrl = core.urlForRoute(base, {
