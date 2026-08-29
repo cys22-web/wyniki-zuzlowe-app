@@ -945,3 +945,28 @@ test("event discovery route restores non-default filters only", () => {
     eventTime: "30d", eventSort: "competition",
   });
 });
+
+test("global search groups players and unique logical-event entities", () => {
+  const index = core.buildGlobalSearchIndex({
+    players: [{ pid: 7, display: "Bartosz Zmarzlik", key: "bartosz zmarzlik", meta: "Polska" }],
+    events: [
+      { key: "gorzow", season: "2026", eventDate: "2026-08-20", title: "Stal Gorzów – Motor Lublin", league: "Ekstraliga", track: "Gorzów", competition: "Ekstraliga", teamKeys: ["Stal Gorzów", "Motor Lublin"], searchText: "Stal Gorzów Motor Lublin Ekstraliga" },
+      { key: "albury", season: "2026", eventDate: "2026-01-03", title: "IM Australii", league: "Australia", track: "Albury-Wodonga", competition: "IM Australii", teamKeys: [], searchText: "IM Australii Albury-Wodonga" },
+      { key: "belle", season: "2025", eventDate: "2025-07-01", title: "Belle Vue – Ipswich", league: "Premiership", track: "Manchester", competition: "Premiership", teamKeys: ["Belle Vue", "Ipswich"], searchText: "Belle Vue Ipswich Premiership Manchester" },
+    ],
+  });
+  assert.equal(index.filter(entry => entry.type === "event").length, 3);
+  assert.equal(core.searchGlobal(index, "Zmarzlik").top.type, "player");
+  assert.equal(core.searchGlobal(index, "Zmarzilk").groups.player[0].display, "Bartosz Zmarzlik");
+  const gorzow = core.searchGlobal(index, "Gorzów").groups;
+  assert.equal(gorzow.track[0].display, "Gorzów");
+  assert.ok(gorzow.event.some(entry => entry.eventKey === "gorzow"));
+  assert.ok(gorzow.team.some(entry => entry.display === "Stal Gorzów"));
+  const albury = core.searchGlobal(index, "Albury").groups;
+  assert.equal(albury.track[0].display, "Albury-Wodonga");
+  assert.equal(albury.event[0].eventKey, "albury");
+  const premiership = core.searchGlobal(index, "Premiership").groups;
+  assert.ok(premiership.competition.some(entry => entry.display === "Premiership"));
+  assert.ok(premiership.event.some(entry => entry.eventKey === "belle"));
+  assert.equal(core.searchGlobal(index, "Belle Vue").groups.team[0].filters.team, "Belle Vue");
+});

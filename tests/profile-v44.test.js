@@ -135,6 +135,18 @@ test("event discovery exposes shared quick filters, sorting and route state", ()
   assert.match(app, /eventSort:filters\.sort==='newest'\?'':filters\.sort/);
 });
 
+test("global search reuses the main field and routes each grouped result", () => {
+  assert.match(html, /Zawodnik, wydarzenie, tor, drużyna lub rozgrywki/);
+  assert.match(html, /id="eventSearchScope"/);
+  assert.match(app, /CORE\.buildGlobalSearchIndex/);
+  assert.match(app, /CORE\.searchGlobal/);
+  for (const label of ["Zawodnicy", "Wydarzenia", "Tory", "Drużyny", "Rozgrywki"]) {
+    assert.match(app, new RegExp(label));
+  }
+  assert.match(app, /hit\.type==='event'/);
+  assert.match(app, /openEventsWithFilters\(hit\.filters\|\|\{\}\)/);
+});
+
 test("local PL2 import takes the start number from A without shifting existing fields", () => {
   const importer = app.match(/async function importWorkbook[\s\S]*?async function handleFile/)[0];
   assert.match(importer, /const name=clean\(row\[1\]\)/);

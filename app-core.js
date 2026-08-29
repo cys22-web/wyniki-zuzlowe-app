@@ -318,6 +318,108 @@
     return { leagues };
   }
 
+  const GLOBAL_SEARCH_TYPES = ["player", "event", "track", "team", "competition"];
+
+  function buildGlobalSearchIndex({ players = [], events = [] } = {}) {
+    const index = [];
+    for (const player of players) {
+      const display = String(player?.display || "").trim();
+      if (!display) continue;
+      index.push({
+        type: "player",
+        display,
+        key: normalize(display),
+        searchKeys: [normalize(player?.key), normalize(display)],
+        pid: player.pid,
+        playerKey: player.key,
+        meta: String(player?.meta || ""),
+      });
+    }
+
+    const aggregates = {
+      track: new Map(),
+      team: new Map(),
+      competition: new Map(),
+    };
+    const addAggregate = (type, value, event, filters) => {
+      const display = String(value || "").trim();
+      const key = normalize(display);
+      if (!key) return;
+      let entry = aggregates[type].get(key);
+      if (!entry) {
+        entry = { type, display, key, count: 0, seasons: new Set(), filters };
+        aggregates[type].set(key, entry);
+      }
+      entry.count += 1;
+      if (event?.season) entry.seasons.add(String(event.season));
+    };
+
+    for (const event of events) {
+      const title = String(event?.title || event?.competition || event?.league || "Wydarzenie");
+      const searchText = String(event?.searchText || [title, event?.track, event?.league, event?.round].filter(Boolean).join(" "));
+      index.push({
+        type: "event",
+        display: title,
+        key: normalize(title),
+        searchKeys: [normalize(title), normalize(`${event?.competition || ""} ${event?.track || ""}`), normalize(searchText)],
+        eventKey: String(event?.key || ""),
+        season: String(event?.season || ""),
+        meta: [event?.eventDate, event?.track, event?.league, event?.round].filter(Boolean).join(" • "),
+      });
+      addAggregate("track", event?.track, event, { track: event?.track });
+      for (const team of event?.teamKeys || []) addAggregate("team", team, event, { team });
+      addAggregate("competition", event?.competition, event, { competition: event?.competition });
+      addAggregate("competition", event?.league, event, { league: event?.league });
+    }
+    for (const type of ["track", "team", "competition"]) {
+      for (const entry of aggregates[type].values()) {
+        index.push({
+          ...entry,
+          seasons: [...entry.seasons].sort((a, b) => Number(b) - Number(a)),
+          searchKeys: [entry.key],
+          meta: `${entry.count.toLocaleString("pl-PL")} wydarzeń`,
+        });
+      }
+    }
+    return index;
+  }
+
+  function globalSearchTier(entry, query) {
+    let best = null;
+    for (const key of [...new Set([entry?.key, ...(entry?.searchKeys || [])].filter(Boolean))]) {
+      const tier = searchTier({ key, tokens: key.split(" ") }, query);
+      if (!tier) continue;
+      if (!best || tier[0] < best[0] || (tier[0] === best[0] && tier[1] < best[1])) best = tier;
+    }
+    return best;
+  }
+
+  function searchGlobal(index, value, limits = {}) {
+    const query = normalize(value);
+    const groups = Object.fromEntries(GLOBAL_SEARCH_TYPES.map((type) => [type, []]));
+    if (!query) return { query, groups, results: [], top: null };
+    const typePriority = new Map(GLOBAL_SEARCH_TYPES.map((type, position) => [type, position]));
+    const ranked = [];
+    for (const entry of index || []) {
+      const tier = globalSearchTier(entry, query);
+      if (!tier) continue;
+      ranked.push({ ...entry, tier: tier[0], distance: tier[1] });
+    }
+    ranked.sort((a, b) =>
+      a.tier - b.tier ||
+      a.distance - b.distance ||
+      (typePriority.get(a.type) ?? 99) - (typePriority.get(b.type) ?? 99) ||
+      Number(b.count || 0) - Number(a.count || 0) ||
+      a.key.length - b.key.length ||
+      a.key.localeCompare(b.key, "pl")
+    );
+    for (const entry of ranked) {
+      const limit = Number(limits[entry.type]) || (entry.type === "player" || entry.type === "event" ? 6 : 4);
+      if (groups[entry.type]?.length < limit) groups[entry.type].push(entry);
+    }
+    return { query, groups, results: GLOBAL_SEARCH_TYPES.flatMap((type) => groups[type]), top: ranked[0] || null };
+  }
+
   function seasonStats(records) {
     const grouped = new Map();
     for (const record of records || []) {
@@ -1160,6 +1262,7 @@
     bestHeatSeason,
     bestSeason,
     boundedDamerauLevenshtein,
+    buildGlobalSearchIndex,
     analyzeThreshold,
     cascadingFilterOptions,
     classifyTeamEvent,
@@ -1195,6 +1298,7 @@
     routeFromUrl,
     seasonStats,
     sampleSizeLabel,
+    searchGlobal,
     sortPlayerResults,
     standardDeviation,
     stableEventKey,
