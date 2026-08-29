@@ -94,6 +94,16 @@ test("stage A profile exposes track history and filtered form ranges", () => {
   assert.match(app, /eventKeyMap\.get\(point\.dataset\.formEvent\)/);
 });
 
+test("comparison leads with shared events and keeps full rider result columns", () => {
+  assert.ok(html.indexOf('id="commonSummary"') < html.indexOf('id="cmpResultsA"'));
+  assert.match(html, /id="cmpCommonTitle"/);
+  assert.match(html, /id="cmpResultsTitle"/);
+  assert.match(app, /CORE\.comparisonContext\(metricRecords\(a\),metricRecords\(b\)\)/);
+  assert.match(app, /eventDate:d\.eventDate/);
+  assert.match(app, /Wszystkie wyniki obu zawodników na tym torze/);
+  assert.match(app, /stabilnym eventKey/);
+});
+
 test("v4.8 exposes dates, heats, start numbers and advanced track controls", () => {
   for (const id of ["multiTrackToggle", "multiTrackPanel", "multiTrackSearch", "multiTrackOptions"]) {
     assert.match(html, new RegExp(`id="${id}"`));

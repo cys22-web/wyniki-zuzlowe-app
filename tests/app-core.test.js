@@ -457,6 +457,56 @@ test("player results without dates fall back to season and lower Excel rows firs
   ]);
 });
 
+test("comparison context keeps 20 and 8 track starts while reporting 3 shared events", () => {
+  const left = Array.from({ length: 20 }, (_, index) => ({
+    eventKey: `event-${index}`,
+    season: "2026",
+    track: "Gorzów",
+    points: String(12 - index % 4),
+    heats: "3,3,2,2",
+  }));
+  const right = Array.from({ length: 8 }, (_, index) => ({
+    eventKey: index < 3 ? `event-${index}` : `other-${index}`,
+    season: "2026",
+    track: "Gorzów",
+    points: String(9 + index % 3),
+    heats: "3,2,2,2",
+  }));
+  const context = core.comparisonContext(left, right, { track: "Gorzów" });
+  assert.equal(context.leftMetric.starts, 20);
+  assert.equal(context.rightMetric.starts, 8);
+  assert.equal(context.common.events.length, 3);
+});
+
+test("head-to-head balance counts a left win, right win and tie", () => {
+  const result = core.commonEvents(
+    [
+      { eventKey: "left", points: "12" },
+      { eventKey: "right", points: "8" },
+      { eventKey: "tie", points: "10" },
+    ],
+    [
+      { eventKey: "left", points: "9" },
+      { eventKey: "right", points: "11" },
+      { eventKey: "tie", points: "10" },
+    ]
+  );
+  assert.deepEqual(
+    { leftWins: result.leftWins, rightWins: result.rightWins, ties: result.ties },
+    { leftWins: 1, rightWins: 1, ties: 1 }
+  );
+});
+
+test("common event balance can compare reliable points plus bonus", () => {
+  const result = core.commonEvents(
+    [{ eventKey: "bonus", points: "10+2" }],
+    [{ eventKey: "bonus", points: "11" }],
+    { pointsMode: "pointsBonus" }
+  );
+  assert.equal(result.leftWins, 1);
+  assert.equal(result.pointsMode, "pointsBonus");
+});
+
 test("dynamic league family round-trips in a player URL", () => {
   const url = core.urlForRoute("https://wyniki-zuzlowe.vercel.app/", {
     view: "player",

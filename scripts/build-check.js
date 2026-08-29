@@ -45,7 +45,7 @@ assert.match(app, /activateUpdatedDB=async function\(db\)[\s\S]*captureViewConte
 for (const id of ["cmpResultsA", "cmpResultsB", "cmpOverall", "cmpForm", "cmpChart", "cmpSeasons", "commonEvents", "eventTeams", "multiTrackPanel", "multiTrackOptions"]) {
   assert.match(html, new RegExp(`id=["']${id}["']`));
 }
-const comparisonOrder = ["cmpResultsA", "cmpResultsB", "cmpOverall", "cmpForm", "cmpChart", "cmpSeasons", "commonEvents"]
+const comparisonOrder = ["commonEvents", "cmpResultsA", "cmpResultsB", "cmpOverall", "cmpForm", "cmpChart", "cmpSeasons"]
   .map((id) => html.indexOf(`id="${id}"`));
 assert.ok(comparisonOrder.every((position) => position >= 0));
 assert.ok(comparisonOrder.every((position, index) => index === 0 || position > comparisonOrder[index - 1]));

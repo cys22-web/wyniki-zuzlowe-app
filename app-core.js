@@ -935,8 +935,18 @@
     return urlForRoute(input, { view: "event", eventKey });
   }
 
-  function commonEvents(left, right) {
-    const rightByKey = new Map((right || []).map((event) => [event.key, event]));
+  function commonEventValue(event, pointsMode) {
+    const points = parsePointsBreakdown(event?.points);
+    if (pointsMode === "pointsBonus") return points.reliable ? points.totalWithBonus : null;
+    return points.pointsReliable ? points.points : null;
+  }
+
+  function commonEvents(left, right, options = {}) {
+    const pointsMode = options.pointsMode === "pointsBonus" ? "pointsBonus" : "points";
+    const eventKey = (event) => String(event?.key || event?.eventKey || "");
+    const rightByKey = new Map(
+      (right || []).map((event) => [eventKey(event), event]).filter(([key]) => key)
+    );
     const events = [];
     let leftWins = 0;
     let rightWins = 0;
@@ -945,10 +955,12 @@
     let leftTotal = 0;
     let rightTotal = 0;
     for (const leftEvent of left || []) {
-      const rightEvent = rightByKey.get(leftEvent.key);
+      const key = eventKey(leftEvent);
+      if (!key) continue;
+      const rightEvent = rightByKey.get(key);
       if (!rightEvent) continue;
-      const leftPoints = basePoints(leftEvent.points);
-      const rightPoints = basePoints(rightEvent.points);
+      const leftPoints = commonEventValue(leftEvent, pointsMode);
+      const rightPoints = commonEventValue(rightEvent, pointsMode);
       let difference = null;
       if (leftPoints !== null && rightPoints !== null) {
         compared += 1;
@@ -960,7 +972,7 @@
         else ties += 1;
       }
       events.push({
-        key: leftEvent.key,
+        key,
         left: leftEvent,
         right: rightEvent,
         leftPoints,
@@ -976,6 +988,19 @@
       compared,
       leftAverage: compared ? leftTotal / compared : null,
       rightAverage: compared ? rightTotal / compared : null,
+      pointsMode,
+    };
+  }
+
+  function comparisonContext(left, right, filters = {}, options = {}) {
+    const leftRecords = filterRecords(left, filters);
+    const rightRecords = filterRecords(right, filters);
+    return {
+      leftRecords,
+      rightRecords,
+      leftMetric: playerMetric(leftRecords),
+      rightMetric: playerMetric(rightRecords),
+      common: commonEvents(leftRecords, rightRecords, options),
     };
   }
 
@@ -992,6 +1017,7 @@
     analyzeThreshold,
     cascadingFilterOptions,
     classifyTeamEvent,
+    comparisonContext,
     comparisonTrackOptions,
     commonEvents,
     currentForm,
