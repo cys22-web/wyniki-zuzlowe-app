@@ -79,7 +79,7 @@ test("service-worker controller change performs at most one guarded reload", asy
   handlers.controllerchange();
   handlers.controllerchange();
   assert.equal(reloads, 1);
-  assert.equal(storage.get("wz-pwa-controller-reload-v491"), "1");
+  assert.equal(storage.get("wz-pwa-controller-reload-v492"), "1");
 });
 
 test("stage A profile exposes track history and filtered form ranges", () => {
@@ -112,7 +112,7 @@ test("comparison leads with shared events and keeps full rider result columns", 
   assert.match(app, /stabilnym eventKey/);
 });
 
-test("v4.9.1 exposes dates, heats, start numbers and advanced track controls", () => {
+test("v4.9.2 exposes dates, heats, start numbers and advanced track controls", () => {
   for (const id of ["multiTrackToggle", "multiTrackPanel", "multiTrackSearch", "multiTrackOptions"]) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
