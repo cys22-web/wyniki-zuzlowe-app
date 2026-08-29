@@ -478,20 +478,26 @@
     });
   }
 
-  function formChartPointAtX(series, clientX, bounds = {}, geometry = {}) {
-    const items = Array.isArray(series) ? series : [];
-    if (!items.length) return null;
-    const rectLeft = Number(bounds.left);
-    const rectWidth = Number(bounds.width);
-    if (!Number.isFinite(clientX) || !Number.isFinite(rectLeft) || !(rectWidth > 0)) return null;
-    const viewWidth = Number(geometry.viewWidth) || 720;
-    const plotLeft = Number(geometry.plotLeft) || 0;
-    const plotWidth = Number(geometry.plotWidth) || viewWidth;
-    if (!(plotWidth > 0)) return null;
-    const viewX = (clientX - rectLeft) * viewWidth / rectWidth;
-    const ratio = Math.max(0, Math.min(1, (viewX - plotLeft) / plotWidth));
-    const index = items.length === 1 ? 0 : Math.round(ratio * (items.length - 1));
-    return items[index] || null;
+  function formChartPointAtPosition(points, x, y) {
+    const items = Array.isArray(points) ? points : [];
+    if (!items.length || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+    let nearest = null;
+    let nearestDistance = Infinity;
+    let tied = false;
+    for (const item of items) {
+      const pointX = Number(item?.x);
+      const pointY = Number(item?.y);
+      if (!Number.isFinite(pointX) || !Number.isFinite(pointY)) continue;
+      const distance = (pointX - x) ** 2 + (pointY - y) ** 2;
+      if (distance < nearestDistance - 1e-12) {
+        nearest = item;
+        nearestDistance = distance;
+        tied = false;
+      } else if (Math.abs(distance - nearestDistance) <= 1e-12) {
+        tied = true;
+      }
+    }
+    return tied ? null : nearest;
   }
 
   function median(values) {
@@ -1042,7 +1048,7 @@
     formatEventUrl,
     formatPlayerUrl,
     filterRecords,
-    formChartPointAtX,
+    formChartPointAtPosition,
     formSeries,
     formStats,
     latestEventRefs,

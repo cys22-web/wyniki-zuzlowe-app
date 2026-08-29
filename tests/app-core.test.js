@@ -385,11 +385,11 @@ test("common event balance stays empty when riders have no shared event key", ()
   assert.equal(result.rightAverage, null);
 });
 
-test("dense form chart resolves the clicked position to the matching stable event key", () => {
+test("dense form chart resolves every 2D point to its matching stable event key", () => {
   const records = Array.from({ length: 879 }, (_, order) => ({
     season: "2010",
     order,
-    points: "8",
+    points: String(4 + order % 16),
     heats: "3,1,2,2",
     eventKey: `event-${order}`,
     track: `Track ${order}`,
@@ -409,21 +409,74 @@ test("dense form chart resolves the clicked position to the matching stable even
     competition: "Liga Juniorów",
     round: "6 runda",
   });
+  Object.assign(records[659], {
+    eventKey: "e2022-3qj8vlvrwy-0",
+    track: "Malilla",
+    competition: "",
+    round: "Półfinał",
+    points: "10+1",
+  });
+  Object.assign(records[660], {
+    eventKey: "e2022-28c0twhvjiy-0",
+    track: "Malilla",
+    competition: "GP",
+    round: "9 runda",
+    points: "19",
+  });
+  Object.assign(records[877], {
+    eventKey: "e2026-2575id47rjf-0",
+    track: "Grudziądz",
+    competition: "Ekstraliga",
+    points: "9+2",
+  });
+  Object.assign(records[878], {
+    eventKey: "e2026-1dif7acvmry-0",
+    track: "Vastervik",
+    competition: "",
+    round: "Ćwierćfinał",
+    points: "13",
+  });
 
-  const series = core.formSeries(records, "all", "points");
-  const rect = { left: 100, width: 600 };
-  const geometry = { viewWidth: 720, plotLeft: 38, plotWidth: 664 };
-  const firstPointClientX = rect.left + geometry.plotLeft * rect.width / geometry.viewWidth;
-  const selected = core.formChartPointAtX(series, firstPointClientX, rect, geometry);
+  const source = core.formSeries(records, "all", "points");
+  const width = 720;
+  const left = 38;
+  const plotWidth = 664;
+  const top = 20;
+  const plotHeight = 195;
+  const max = Math.max(1, ...source.map((item) => item.value));
+  const min = Math.min(0, ...source.map((item) => item.value));
+  const range = Math.max(1, max - min);
+  const series = source.map((item, index) => ({
+    ...item,
+    index,
+    x: left + index * plotWidth / (source.length - 1),
+    y: top + (max - item.value) * plotHeight / range,
+  }));
+  const collisions = series.filter((item, index) => series.some((other, otherIndex) => (
+    otherIndex > index && item.x === other.x && item.y === other.y
+  )));
 
   assert.equal(series[0].eventKey, "e2010-23na22wanhs-0");
   assert.equal(series[0].track, "Ostrów Wlkp.");
   assert.equal(series[0].competition, "MDMW");
   assert.equal(series[0].round, "5 runda");
   assert.equal(series[8].eventKey, "e2010-2dz2cgcc0o0-0");
-  assert.equal(selected, series[0]);
-  assert.equal(selected.eventKey, "e2010-23na22wanhs-0");
-  assert.notEqual(selected.eventKey, "e2010-2dz2cgcc0o0-0");
+  assert.equal(series[659].eventKey, "e2022-3qj8vlvrwy-0");
+  assert.equal(series[878].eventKey, "e2026-1dif7acvmry-0");
+  assert.equal(collisions.length, 0);
+  for (const point of series) {
+    assert.equal(core.formChartPointAtPosition(series, point.x, point.y), point);
+  }
+});
+
+test("2D form chart hit testing refuses an exact geometric tie", () => {
+  const points = [
+    { eventKey: "left", x: 10, y: 20 },
+    { eventKey: "right", x: 12, y: 20 },
+  ];
+  assert.equal(core.formChartPointAtPosition(points, 10, 20), points[0]);
+  assert.equal(core.formChartPointAtPosition(points, 12, 20), points[1]);
+  assert.equal(core.formChartPointAtPosition(points, 11, 20), null);
 });
 
 test("routing state round-trips player and event URLs", () => {

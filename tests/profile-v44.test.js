@@ -91,7 +91,14 @@ test("stage A profile exposes track history and filtered form ranges", () => {
   assert.match(app, /data-track-history/);
   assert.match(app, /CORE\.leagueQuickFilters\(records\)/);
   assert.match(app, /CORE\.formSeries\(records,formChartLimit,formChartMetric\)/);
-  assert.match(app, /CORE\.formChartPointAtX\(series,event\.clientX/);
+  assert.match(app, /data-form-index/);
+  assert.match(app, /createSVGPoint\(\)/);
+  assert.match(app, /getScreenCTM\(\)/);
+  assert.match(app, /matrix\.inverse\(\)/);
+  assert.match(app, /event\.type==='click'&&!event\.detail/);
+  assert.match(app, /CORE\.formChartPointAtPosition\(series,local\.x,local\.y\)/);
+  assert.match(app, /pressedItem=itemForEvent\(event\)/);
+  assert.match(app, /pressedItem\|\|itemForEvent\(event\)/);
   assert.match(app, /eventKeyMap\.get\(item\.eventKey\)/);
 });
 
