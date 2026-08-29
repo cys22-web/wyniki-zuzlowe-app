@@ -1,4 +1,4 @@
-const CACHE_NAME = "wz-v4-9-20260829-stage-a";
+const CACHE_NAME = "wz-v4-9-1-20260829-form-chart-hotfix";
 const APP_SHELL = [
   "./",
   "index.html",

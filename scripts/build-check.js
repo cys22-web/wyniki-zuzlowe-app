@@ -64,7 +64,7 @@ assert.match(serviceWorker, /event\.respondWith\(fetch\(event\.request, \{ cache
 assert.match(serviceWorker, /skipWaiting/);
 assert.match(serviceWorker, /clients\.claim/);
 assert.match(serviceWorker, /app-core\.js/);
-assert.match(serviceWorker, /wz-v4-9-/);
+assert.match(serviceWorker, /wz-v4-9-1-/);
 assert.match(app, /eventDateForRow/);
 assert.match(app, /S\(row\[0\]\)\],key=/);
 assert.doesNotMatch(app, /S\(row\[13\]\)\],key=/);
