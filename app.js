@@ -124,7 +124,7 @@ applyFilters=function(){if(currentPid===null)return;shown=60;const fy=$('season'
 function cmpFindPid(text){return rankedPlayers(text,1)[0]?.pid??null}
 function cmpSuggest(which){const inp=$(which==='A'?'cmpA':'cmpB'),box=$(which==='A'?'cmpSugA':'cmpSugB'),q=norm(inp.value);if(q.length<2){box.classList.add('hidden');return}const hits=rankedPlayers(q,10);box.innerHTML=hits.length?hits.map(({pid})=>{const p=DB.players[pid];return `<div class="cmpSugItem" data-cmp="${which}" data-pid="${pid}"><b>${esc(p[0])}</b><span>${esc(suggestionMeta(pid))}</span></div>`}).join(''):'<div class="cmpEmpty">Brak zawodnika</div>';box.classList.remove('hidden');box.querySelectorAll('[data-pid]').forEach(x=>x.onclick=()=>{const pid=+x.dataset.pid;if(which==='A'){cmpPidA=pid;$('cmpA').value=DB.players[pid][0]}else{cmpPidB=pid;$('cmpB').value=DB.players[pid][0]}box.classList.add('hidden')})}
 function cmpRows(pid){return (playerRefs[pid]||[]).map(([y,i])=>[y,DB.years[y][i],i])}
-function cmpFilterRows(rows){const fy=$('cmpSeason').value,fl=$('cmpLeague').value,fc=$('cmpComp').value,ft=$('cmpTrack').value;return rows.filter(([y,r])=>(!fy||y===fy)&&(!fl||val(r[8])===fl)&&(!fc||val(r[10])===fc)&&(!ft||val(r[9])===ft))}
+function cmpFilterRows(rows){const fy=$('cmpSeason').value,fl=$('cmpLeague').value,fc=$('cmpComp').value,ft=$('cmpTrack').value;return rows.filter(([y,r])=>(!fy||y===fy)&&(!fl||val(r[8])===fl)&&(!fc||val(r[10])===fc)&&(!ft||CORE.canonicalTrackKey(val(r[9]))===CORE.canonicalTrackKey(ft)))}
 function metricRecords(rows){return rows.map(([season,row])=>({season,points:val(row[1]),heats:val(row[2]),league:val(row[8]),track:val(row[9]),competition:val(row[10]),home:val(row[5]),away:val(row[6])}))}
 function cmpMetric(rows){return CORE.playerMetric(metricRecords(rows))}
 function fmtNum(x,d=2){return x===null||x===undefined?'—':Number(x).toFixed(d).replace('.',',')}
@@ -188,7 +188,7 @@ selectPlayer=function(pid){hideEventViews();$('searchPanel').classList.remove('h
 const _openCompareV3=openCompare;
 openCompare=function(prefillPid=null){hideEventViews();$('searchPanel').classList.remove('hidden');return _openCompareV3(prefillPid)};
 
-function fillEventFilters(){const s={season:new Set(),league:new Set(),track:new Set(),comp:new Set()};for(const event of eventIndex){s.season.add(event.season);s.league.add(event.league);s.track.add(event.track);s.comp.add(event.competition)}options('eventSeason',s.season,'Wszystkie sezony',(a,b)=>+b-+a);options('eventLeague',s.league,'Wszystkie ligi / kraje');options('eventTrack',s.track,'Wszystkie tory');options('eventComp',s.comp,'Wszystkie rozgrywki')}
+function fillEventFilters(){const s={season:new Set(),league:new Set(),track:[],comp:new Set()};for(const event of eventIndex){s.season.add(event.season);s.league.add(event.league);s.track.push(event.track);s.comp.add(event.competition)}options('eventSeason',s.season,'Wszystkie sezony',(a,b)=>+b-+a);options('eventLeague',s.league,'Wszystkie ligi / kraje');options('eventTrack',new Set(CORE.canonicalDisplayValues(s.track,'track')),'Wszystkie tory');options('eventComp',s.comp,'Wszystkie rozgrywki')}
 function openEvents(){currentEvent=null;$('searchPanel').classList.add('hidden');$('home').classList.add('hidden');$('profile').classList.add('hidden');$('filtersPanel').classList.add('hidden');$('resultsSection').classList.add('hidden');$('compareSection').classList.add('hidden');$('eventDetail').classList.add('hidden');$('eventsSection').classList.remove('hidden');fillEventFilters();applyEventFilters();scrollTo({top:0,behavior:'smooth'})}
 function openEventsWithFilters(filters={}){openEvents();eventTeamFilter=filters.team||'';setControlValues({eventTrack:filters.track||'',eventLeague:filters.league||'',eventComp:filters.competition||''});applyEventFilters();persistHistoryContext()}
 function eventTitle(d){const r=d.r,h=val(r[5]),g=val(r[6]);return d.classicTeam?`${h} – ${g}`:(val(r[10])||val(r[8])||val(r[9])||'Zawody')}
@@ -270,7 +270,7 @@ function currentRoute(){
 }
 
 function controlValues(ids){const values={};for(const id of ids){const node=$(id);if(node)values[id]=node.value}return values}
-function setControlValues(values={}){for(const [id,value] of Object.entries(values)){const node=$(id);if(!node)continue;const isTextControl=node.tagName==='INPUT'||node.tagName==='TEXTAREA',hasOption=node.options&&[...node.options].some(option=>option.value===value);if(isTextControl||hasOption)node.value=value}}
+function setControlValues(values={}){for(const [id,value] of Object.entries(values)){const node=$(id);if(!node)continue;const next=value??'',isTextControl=node.tagName==='INPUT'||node.tagName==='TEXTAREA',hasOption=node.options&&[...node.options].some(option=>option.value===next);if(isTextControl||hasOption)node.value=next}}
 function captureViewContext(){
   const route=currentRoute(),context={route,scrollY:Math.max(0,Math.round(window.scrollY||0))};
   if(route.view==='player')Object.assign(context,{controls:controlValues(['season','league','comp','track','within','sort']),shown});
@@ -302,7 +302,7 @@ async function shareUrl(title,url){
 }
 
 const _activateDBV43=activateDB;
-activateDB=async function(db){await _activateDBV43(db);playerSearchIndex=DB.players.map((player,pid)=>({pid,id:pid,key:player[3],tokens:player[3].split(' ')}));const searchStarted=performance.now();globalSearchIndex=CORE.buildGlobalSearchIndex({players:DB.players.map((player,pid)=>({pid,display:player[0],key:player[3],meta:suggestionMeta(pid)})),events:eventIndex});globalSearchDiagnostics.buildMs=performance.now()-searchStarted;globalSearchDiagnostics.entries=globalSearchIndex.length;renderHome();if(!initialRouteApplied){initialRouteApplied=true;const route=CORE.routeFromUrl(location.href);await applyRoute(route);const context=captureViewContext();history.replaceState({wz43:true,route:context.route,context},'',CORE.urlForRoute(location.href,context.route))}};
+activateDB=async function(db){await _activateDBV43(db);playerSearchIndex=DB.players.map((player,pid)=>({pid,id:pid,key:player[3],tokens:player[3].split(' ')}));const searchStarted=performance.now();globalSearchIndex=CORE.buildGlobalSearchIndex({players:DB.players.map((player,pid)=>({pid,display:player[0],key:player[3],meta:suggestionMeta(pid),count:playerRefs[pid]?.length||0})),events:eventIndex});globalSearchDiagnostics.buildMs=performance.now()-searchStarted;globalSearchDiagnostics.entries=globalSearchIndex.length;renderHome();if(!initialRouteApplied){initialRouteApplied=true;const route=CORE.routeFromUrl(location.href);await applyRoute(route);const context=captureViewContext();history.replaceState({wz43:true,route:context.route,context},'',CORE.urlForRoute(location.href,context.route))}};
 
 activateUpdatedDB=async function(db){const hadDatabase=!!DB,context=hadDatabase?captureViewContext():null;await activateDB(db);if(context){await applyRoute(context.route,context);persistHistoryContext()}};
 
@@ -393,13 +393,14 @@ $('playerShare').onclick=()=>{if(currentPid!==null)void shareUrl(`Wyniki: ${DB.p
 let profileFilteredModel=[],formChartMetric='points',advancedTrackSelection=new Set(),advancedTrackMode='include',advancedTrackQuery='',advancedTrackAvailable=[];
 
 function renderAdvancedTrackOptions(values=advancedTrackAvailable){
-  advancedTrackAvailable=[...new Set([...(values||[]),...advancedTrackSelection])].filter(Boolean).sort((a,b)=>a.localeCompare(b,'pl'));
+  advancedTrackAvailable=CORE.canonicalDisplayValues([...(values||[]),...advancedTrackSelection],'track');
   const query=norm(advancedTrackQuery),visible=advancedTrackAvailable.filter(track=>!query||norm(track).includes(query));
-  $('multiTrackOptions').innerHTML=visible.length?visible.map(track=>`<label class="multiTrackOption"><input type="checkbox" data-multi-track="${esc(track)}" ${advancedTrackSelection.has(track)?'checked':''}><span>${esc(track)}</span></label>`).join(''):'<div class="empty">Brak torów pasujących do wyszukiwania.</div>';
-  $('multiTrackCount').textContent=`${advancedTrackSelection.size} wybranych`;
-  $('multiTrackSummary').textContent=advancedTrackSelection.size?`${advancedTrackMode==='exclude'?'Wszystkie poza':'Tylko wybrane'} • ${advancedTrackSelection.size}`:'Filtr zaawansowany nieaktywny';
+  const selectedKeys=new Set([...advancedTrackSelection].map(CORE.canonicalTrackKey));
+  $('multiTrackOptions').innerHTML=visible.length?visible.map(track=>`<label class="multiTrackOption"><input type="checkbox" data-multi-track="${esc(track)}" ${selectedKeys.has(CORE.canonicalTrackKey(track))?'checked':''}><span>${esc(track)}</span></label>`).join(''):'<div class="empty">Brak torów pasujących do wyszukiwania.</div>';
+  $('multiTrackCount').textContent=`${selectedKeys.size} wybranych`;
+  $('multiTrackSummary').textContent=selectedKeys.size?`${advancedTrackMode==='exclude'?'Wszystkie poza':'Tylko wybrane'} • ${selectedKeys.size}`:'Filtr zaawansowany nieaktywny';
   document.querySelectorAll('input[name="multiTrackMode"]').forEach(input=>{input.checked=input.value===advancedTrackMode});
-  $('multiTrackOptions').querySelectorAll('[data-multi-track]').forEach(input=>input.onchange=()=>{if(input.checked)advancedTrackSelection.add(input.dataset.multiTrack);else advancedTrackSelection.delete(input.dataset.multiTrack);if(advancedTrackSelection.size)$('track').value='';applyFilters();persistHistoryContext()});
+  $('multiTrackOptions').querySelectorAll('[data-multi-track]').forEach(input=>input.onchange=()=>{const key=CORE.canonicalTrackKey(input.dataset.multiTrack);for(const selected of [...advancedTrackSelection])if(CORE.canonicalTrackKey(selected)===key)advancedTrackSelection.delete(selected);if(input.checked)advancedTrackSelection.add(input.dataset.multiTrack);if(advancedTrackSelection.size)$('track').value='';applyFilters();persistHistoryContext()});
 }
 
 function toggleAdvancedTracks(){const panel=$('multiTrackPanel'),open=panel.classList.contains('hidden');panel.classList.toggle('hidden',!open);$('multiTrackToggle').setAttribute('aria-expanded',String(open));$('multiTrackToggle').textContent=open?'Ukryj wybór wielu torów':'Wybierz wiele torów';if(open)renderAdvancedTrackOptions()}

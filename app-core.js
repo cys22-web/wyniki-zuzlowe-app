@@ -15,6 +15,87 @@
       .replace(/\s+/g, " ");
   }
 
+  function canonicalEntityKey(value) {
+    return normalize(value)
+      .replace(/[\-‐‑‒–—−]+/g, " ")
+      .replace(/[.'’`]/g, "")
+      .trim()
+      .replace(/\s+/g, " ");
+  }
+
+  function canonicalTrackKey(value) {
+    return canonicalEntityKey(value);
+  }
+
+  function canonicalTeamKey(value) {
+    return canonicalEntityKey(value);
+  }
+
+  function canonicalDisplayValues(values, type = "track") {
+    const keyFor = type === "team" ? canonicalTeamKey : canonicalTrackKey;
+    const grouped = new Map();
+    for (const raw of values || []) {
+      const value = String(raw || "").trim();
+      const key = keyFor(value);
+      if (!key) continue;
+      let displays = grouped.get(key);
+      if (!displays) grouped.set(key, displays = new Map());
+      displays.set(value, (displays.get(value) || 0) + 1);
+    }
+    return [...grouped.values()].map((displays) => [...displays]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pl"))[0][0]
+    ).sort((a, b) => a.localeCompare(b, "pl"));
+  }
+
+  function findAliasCandidates(entries, { type = "track" } = {}) {
+    const keyFor = type === "team" ? canonicalTeamKey : canonicalTrackKey;
+    const unique = new Map();
+    for (const entry of entries || []) {
+      const value = String(entry?.value || entry || "").trim();
+      if (!value) continue;
+      let item = unique.get(value);
+      if (!item) unique.set(value, item = { value, count: 0, seasons: new Set() });
+      item.count += Number(entry?.count) || 1;
+      for (const season of entry?.seasons || []) item.seasons.add(String(season));
+    }
+    const items = [...unique.values()].map((item) => ({ ...item, seasons: [...item.seasons].sort() }));
+    const candidates = [];
+    const highPairs = new Set();
+    const groups = new Map();
+    for (const item of items) {
+      const key = keyFor(item.value);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    }
+    for (const [canonical, variants] of groups) {
+      if (variants.length < 2) continue;
+      for (let left = 0; left < variants.length; left += 1) {
+        for (let right = left + 1; right < variants.length; right += 1) {
+          const a = variants[left], b = variants[right];
+          highPairs.add([a.value, b.value].sort().join("\u0000"));
+          candidates.push({ type, variantA: a.value, variantB: b.value, countA: a.count, countB: b.count, seasons: [...new Set([...a.seasons, ...b.seasons])].sort(), proposedCanonical: canonical, confidence: "HIGH" });
+        }
+      }
+    }
+    for (let left = 0; left < items.length; left += 1) {
+      const a = items[left], aKey = keyFor(a.value);
+      for (let right = left + 1; right < items.length; right += 1) {
+        const b = items[right], pairKey = [a.value, b.value].sort().join("\u0000");
+        if (highPairs.has(pairKey)) continue;
+        const bKey = keyFor(b.value);
+        if (!aKey || !bKey || aKey[0] !== bKey[0] || Math.abs(aKey.length - bKey.length) > 1) continue;
+        if (boundedDamerauLevenshtein(aKey, bKey, 1) !== 1) continue;
+        const preferred = a.count > b.count || (a.count === b.count && a.value.length <= b.value.length) ? a : b;
+        candidates.push({ type, variantA: a.value, variantB: b.value, countA: a.count, countB: b.count, seasons: [...new Set([...a.seasons, ...b.seasons])].sort(), proposedCanonical: keyFor(preferred.value), confidence: "REVIEW" });
+      }
+    }
+    return candidates.sort((a, b) =>
+      Number(b.confidence === "HIGH") - Number(a.confidence === "HIGH") ||
+      (b.countA + b.countB) - (a.countA + a.countB) ||
+      a.variantA.localeCompare(b.variantA, "pl")
+    );
+  }
+
   function eventDateValue(value) {
     if (value === null || value === undefined || String(value).trim() === "") return null;
     if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -176,7 +257,7 @@
     return previous[b.length];
   }
 
-  function searchTier(entry, query) {
+  function searchTier(entry, query, allowFuzzy = true) {
     const key = entry.key;
     const tokens = entry.tokens || key.split(" ");
     if (key === query || tokens.includes(query)) return [0, 0];
@@ -184,7 +265,7 @@
       return [1, 0];
     }
     if (key.includes(query)) return [2, 0];
-    if (query.length < 4) return null;
+    if (!allowFuzzy || query.length < 4) return null;
 
     const maxDistance = query.length <= 7 ? 1 : 2;
     let distance = maxDistance + 1;
@@ -269,14 +350,14 @@
 
   function filterEvents(events, filters = {}) {
     const search = normalize(filters.search);
-    const team = normalize(filters.team);
+    const team = canonicalTeamKey(filters.team);
     let result = (events || []).filter((event) => {
       if (filters.season && String(event?.season) !== String(filters.season)) return false;
       if (filters.type && eventType(event) !== filters.type) return false;
       if (filters.league && event?.league !== filters.league) return false;
-      if (filters.track && event?.track !== filters.track) return false;
+      if (filters.track && canonicalTrackKey(event?.track) !== canonicalTrackKey(filters.track)) return false;
       if (filters.competition && event?.competition !== filters.competition) return false;
-      if (team && !(event?.teamKeys || []).some((value) => normalize(value) === team)) return false;
+      if (team && !(event?.teamKeys || []).some((value) => canonicalTeamKey(value) === team)) return false;
       if (search && !normalize(event?.searchText || "").includes(search)) return false;
       return true;
     });
@@ -333,6 +414,7 @@
         pid: player.pid,
         playerKey: player.key,
         meta: String(player?.meta || ""),
+        count: Number(player?.count) || 0,
       });
     }
 
@@ -343,11 +425,12 @@
     };
     const addAggregate = (type, value, event, filters) => {
       const display = String(value || "").trim();
-      const key = normalize(display);
+      const key = type === "track" ? canonicalTrackKey(display) : type === "team" ? canonicalTeamKey(display) : normalize(display);
       if (!key) return;
       let entry = aggregates[type].get(key);
       if (!entry) {
-        entry = { type, display, key, count: 0, seasons: new Set(), filters };
+        const canonicalFilters = type === "track" ? { track: display } : type === "team" ? { team: display } : filters;
+        entry = { type, display, key, count: 0, seasons: new Set(), filters: canonicalFilters };
         aggregates[type].set(key, entry);
       }
       entry.count += 1;
@@ -384,10 +467,10 @@
     return index;
   }
 
-  function globalSearchTier(entry, query) {
+  function globalSearchTier(entry, query, allowFuzzy = true) {
     let best = null;
     for (const key of [...new Set([entry?.key, ...(entry?.searchKeys || [])].filter(Boolean))]) {
-      const tier = searchTier({ key, tokens: key.split(" ") }, query);
+      const tier = searchTier({ key, tokens: key.split(" ") }, query, allowFuzzy);
       if (!tier) continue;
       if (!best || tier[0] < best[0] || (tier[0] === best[0] && tier[1] < best[1])) best = tier;
     }
@@ -401,9 +484,18 @@
     const typePriority = new Map(GLOBAL_SEARCH_TYPES.map((type, position) => [type, position]));
     const ranked = [];
     for (const entry of index || []) {
-      const tier = globalSearchTier(entry, query);
+      const tier = globalSearchTier(entry, query, false);
       if (!tier) continue;
       ranked.push({ ...entry, tier: tier[0], distance: tier[1] });
+    }
+    if (!ranked.length && query.length >= 4) {
+      const maxDistance = query.length <= 7 ? 1 : 2;
+      for (const entry of index || []) {
+        if (entry?.type === "event" && Math.abs(String(entry.key || "").length - query.length) > maxDistance) continue;
+        const tier = globalSearchTier(entry, query, true);
+        if (!tier) continue;
+        ranked.push({ ...entry, tier: tier[0], distance: tier[1] });
+      }
     }
     ranked.sort((a, b) =>
       a.tier - b.tier ||
@@ -546,7 +638,7 @@
     const search = normalize(filters.search);
     const selectedTracks = new Set(
       Array.isArray(filters.tracks)
-        ? filters.tracks.map((value) => String(value)).filter(Boolean)
+        ? filters.tracks.map(canonicalTrackKey).filter(Boolean)
         : []
     );
     const trackMode = filters.trackMode === "exclude" ? "exclude" : "include";
@@ -555,9 +647,9 @@
       if (filters.league && record.league !== filters.league) return false;
       if (filters.leagueFamily && !leagueQuickFilterMatches(record, filters.leagueFamily)) return false;
       if (filters.competition && record.competition !== filters.competition) return false;
-      if (filters.track && record.track !== filters.track) return false;
+      if (filters.track && canonicalTrackKey(record.track) !== canonicalTrackKey(filters.track)) return false;
       if (selectedTracks.size) {
-        const selected = selectedTracks.has(String(record.track || ""));
+        const selected = selectedTracks.has(canonicalTrackKey(record.track));
         if (trackMode === "include" && !selected) return false;
         if (trackMode === "exclude" && selected) return false;
       }
@@ -586,13 +678,14 @@
           otherFilters[candidate] = filters[candidate];
         }
       }
-      result[field] = [...new Set(
-        filterRecords(records, otherFilters)
-          .map((record) => String(record[field] ?? "").trim())
-          .filter(Boolean)
-      )].sort((a, b) => field === "season"
-        ? Number(b) - Number(a)
-        : a.localeCompare(b, "pl"));
+      const values = filterRecords(records, otherFilters)
+        .map((record) => String(record[field] ?? "").trim())
+        .filter(Boolean);
+      result[field] = field === "track"
+        ? canonicalDisplayValues(values, "track")
+        : [...new Set(values)].sort((a, b) => field === "season"
+          ? Number(b) - Number(a)
+          : a.localeCompare(b, "pl"));
     }
     return result;
   }
@@ -1036,12 +1129,22 @@
   }
 
   function comparisonTrackOptions(leftTracks, rightTracks) {
-    const left = new Set((leftTracks || []).map(String).filter(Boolean));
-    const right = new Set((rightTracks || []).map(String).filter(Boolean));
-    return [...new Set([...left, ...right])]
-      .map((value) => ({
-        value,
-        scope: left.has(value) && right.has(value) ? "both" : left.has(value) ? "left" : "right",
+    const grouped = new Map();
+    const add = (values, side) => {
+      for (const raw of values || []) {
+        const value = String(raw || "").trim(), key = canonicalTrackKey(value);
+        if (!key) continue;
+        let item = grouped.get(key);
+        if (!item) grouped.set(key, item = { displays: new Map(), left: false, right: false });
+        item[side] = true;
+        item.displays.set(value, (item.displays.get(value) || 0) + 1);
+      }
+    };
+    add(leftTracks, "left");add(rightTracks, "right");
+    return [...grouped.values()]
+      .map((item) => ({
+        value: [...item.displays].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pl"))[0][0],
+        scope: item.left && item.right ? "both" : item.left ? "left" : "right",
       }))
       .sort((a, b) =>
         Number(b.scope === "both") - Number(a.scope === "both") ||
@@ -1263,6 +1366,9 @@
     bestSeason,
     boundedDamerauLevenshtein,
     buildGlobalSearchIndex,
+    canonicalDisplayValues,
+    canonicalTeamKey,
+    canonicalTrackKey,
     analyzeThreshold,
     cascadingFilterOptions,
     classifyTeamEvent,
@@ -1278,6 +1384,7 @@
     formatPlayerUrl,
     filterRecords,
     filterEvents,
+    findAliasCandidates,
     formChartPointAtPosition,
     formSeries,
     formStats,

@@ -948,7 +948,10 @@ test("event discovery route restores non-default filters only", () => {
 
 test("global search groups players and unique logical-event entities", () => {
   const index = core.buildGlobalSearchIndex({
-    players: [{ pid: 7, display: "Bartosz Zmarzlik", key: "bartosz zmarzlik", meta: "Polska" }],
+    players: [
+      { pid: 7, display: "Bartosz Zmarzlik", key: "bartosz zmarzlik", meta: "Polska", count: 891 },
+      { pid: 8, display: "Paweł Zmarzlik", key: "pawel zmarzlik", meta: "Polska", count: 42 },
+    ],
     events: [
       { key: "gorzow", season: "2026", eventDate: "2026-08-20", title: "Stal Gorzów – Motor Lublin", league: "Ekstraliga", track: "Gorzów", competition: "Ekstraliga", teamKeys: ["Stal Gorzów", "Motor Lublin"], searchText: "Stal Gorzów Motor Lublin Ekstraliga" },
       { key: "albury", season: "2026", eventDate: "2026-01-03", title: "IM Australii", league: "Australia", track: "Albury-Wodonga", competition: "IM Australii", teamKeys: [], searchText: "IM Australii Albury-Wodonga" },
@@ -956,7 +959,7 @@ test("global search groups players and unique logical-event entities", () => {
     ],
   });
   assert.equal(index.filter(entry => entry.type === "event").length, 3);
-  assert.equal(core.searchGlobal(index, "Zmarzlik").top.type, "player");
+  assert.equal(core.searchGlobal(index, "Zmarzlik").top.display, "Bartosz Zmarzlik");
   assert.equal(core.searchGlobal(index, "Zmarzilk").groups.player[0].display, "Bartosz Zmarzlik");
   const gorzow = core.searchGlobal(index, "Gorzów").groups;
   assert.equal(gorzow.track[0].display, "Gorzów");
@@ -969,4 +972,46 @@ test("global search groups players and unique logical-event entities", () => {
   assert.ok(premiership.competition.some(entry => entry.display === "Premiership"));
   assert.ok(premiership.event.some(entry => entry.eventKey === "belle"));
   assert.equal(core.searchGlobal(index, "Belle Vue").groups.team[0].filters.team, "Belle Vue");
+});
+
+test("real HIGH track aliases share filtering, history and comparison context", () => {
+  assert.equal(core.canonicalTrackKey("Heusden Zolder"), core.canonicalTrackKey("Heusden-Zolder"));
+  const records = [
+    { id: "space", season: "2024", order: 1, track: "Heusden Zolder", points: "8", heats: "2,2,2,2" },
+    { id: "dash", season: "2025", order: 2, track: "Heusden-Zolder", points: "10", heats: "3,3,2,2" },
+  ];
+  assert.equal(core.filterRecords(records, { track: "Heusden-Zolder" }).length, 2);
+  assert.equal(core.trackHistory(records, "Heusden Zolder").metric.starts, 2);
+  const options = core.comparisonTrackOptions(["Heusden Zolder"], ["Heusden-Zolder"]);
+  assert.equal(options.length, 1);
+  assert.equal(options[0].scope, "both");
+});
+
+test("real HIGH team aliases share event discovery and global search", () => {
+  assert.equal(core.canonicalTeamKey("Speedway-Team Wolfslake"), core.canonicalTeamKey("Speedway Team Wolfslake"));
+  const events = [
+    { key: "one", season: "2021", teamKeys: ["Speedway-Team Wolfslake"], title: "Mecz 1", searchText: "Mecz 1" },
+    { key: "two", season: "2022", teamKeys: ["Speedway Team Wolfslake"], title: "Mecz 2", searchText: "Mecz 2" },
+  ];
+  assert.equal(core.filterEvents(events, { team: "Speedway Team Wolfslake" }).length, 2);
+  const index = core.buildGlobalSearchIndex({ events });
+  const team = core.searchGlobal(index, "Speedway Team Wolfslake").groups.team[0];
+  assert.equal(team.count, 2);
+});
+
+test("REVIEW similarities never alter canonical filtering", () => {
+  assert.notEqual(core.canonicalTrackKey("Częstochowa"), core.canonicalTrackKey("Częstochwa"));
+  assert.notEqual(core.canonicalTeamKey("Lahti I"), core.canonicalTeamKey("Lahti II"));
+  assert.equal(core.filterRecords([{ track: "Częstochwa" }], { track: "Częstochowa" }).length, 0);
+  assert.equal(core.filterEvents([{ teamKeys: ["Lahti II"] }], { team: "Lahti I" }).length, 0);
+});
+
+test("alias audit classifies typography as HIGH and spelling as REVIEW", () => {
+  const candidates = core.findAliasCandidates([
+    { value: "Heusden Zolder", count: 79, seasons: ["2024"] },
+    { value: "Heusden-Zolder", count: 654, seasons: ["2025"] },
+    { value: "Heuseden-Zolder", count: 16, seasons: ["2026"] },
+  ], { type: "track" });
+  assert.equal(candidates.find(item => item.variantA === "Heusden Zolder" && item.variantB === "Heusden-Zolder")?.confidence, "HIGH");
+  assert.ok(candidates.some(item => item.confidence === "REVIEW" && [item.variantA, item.variantB].includes("Heuseden-Zolder")));
 });

@@ -7,6 +7,7 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+const css = fs.readFileSync(path.join(root, "style.css"), "utf8");
 
 test("profile filters precede tabs and the three views are separate", () => {
   assert.ok(html.indexOf('id="filtersPanel"') < html.indexOf('id="playerTabs"'));
@@ -133,6 +134,13 @@ test("event discovery exposes shared quick filters, sorting and route state", ()
   assert.match(app, /CORE\.eventFilterFacets\(eventIndex,filters\)/);
   assert.match(app, /eventTimeMode/);
   assert.match(app, /eventSort:filters\.sort==='newest'\?'':filters\.sort/);
+  assert.match(css, /\.eventQuickGroups>div\{min-width:0\}/);
+  assert.match(css, /\.eventChips\{[^}]*max-width:100%/);
+});
+
+test("optional route controls restore as empty values instead of the text undefined", () => {
+  assert.match(app, /const next=value\?\?''/);
+  assert.doesNotMatch(app, /node\.value=value/);
 });
 
 test("global search reuses the main field and routes each grouped result", () => {
@@ -145,6 +153,13 @@ test("global search reuses the main field and routes each grouped result", () =>
   }
   assert.match(app, /hit\.type==='event'/);
   assert.match(app, /openEventsWithFilters\(hit\.filters\|\|\{\}\)/);
+});
+
+test("canonical track and team aliases stay in the PWA filtering layer", () => {
+  assert.match(app, /CORE\.canonicalDisplayValues/);
+  assert.match(app, /CORE\.canonicalTrackKey\(val\(r\[9\]\)\)/);
+  assert.match(app, /CORE\.buildGlobalSearchIndex/);
+  assert.doesNotMatch(app, /stableEventKey\([^)]*canonicalTrackKey/);
 });
 
 test("local PL2 import takes the start number from A without shifting existing fields", () => {
