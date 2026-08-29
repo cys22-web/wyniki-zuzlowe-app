@@ -125,6 +125,16 @@ test("v4.9.2 exposes dates, heats, start numbers and advanced track controls", (
   assert.match(app, /round:val\(r\[11\]\),capacity:val\(r\[12\]\)/);
 });
 
+test("event discovery exposes shared quick filters, sorting and route state", () => {
+  for (const id of ["eventTypeChips", "eventTimeChips", "eventLeagueChips", "eventSort"]) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  assert.match(app, /CORE\.filterEvents\(eventIndex,eventFilterState\(\)\)/);
+  assert.match(app, /CORE\.eventFilterFacets\(eventIndex,filters\)/);
+  assert.match(app, /eventTimeMode/);
+  assert.match(app, /eventSort:filters\.sort==='newest'\?'':filters\.sort/);
+});
+
 test("local PL2 import takes the start number from A without shifting existing fields", () => {
   const importer = app.match(/async function importWorkbook[\s\S]*?async function handleFile/)[0];
   assert.match(importer, /const name=clean\(row\[1\]\)/);

@@ -223,6 +223,101 @@
     return ranked.slice(0, limit);
   }
 
+  function eventType(event) {
+    if (event?.multiTeam || event?.type === "multi") return "multi";
+    if (event?.classicTeam || event?.type === "team") return "team";
+    return "individual";
+  }
+
+  function eventTimestamp(event) {
+    const value = resultDateValue(event);
+    return value === null ? null : value;
+  }
+
+  function compareEvents(left, right, sort = "newest") {
+    const leftDate = eventTimestamp(left);
+    const rightDate = eventTimestamp(right);
+    const fallback = (a, b, direction) =>
+      (Number(a?.season) - Number(b?.season)) * direction ||
+      (Number(a?.order) - Number(b?.order)) * direction;
+    const newest = (a, b) =>
+      Number(b !== null) - Number(a !== null) ||
+      (a !== null && b !== null ? b - a : 0);
+    if (sort === "oldest") {
+      return (
+        Number(leftDate !== null) - Number(rightDate !== null) ||
+        (leftDate !== null && rightDate !== null ? leftDate - rightDate : 0) ||
+        fallback(left, right, 1)
+      );
+    }
+    if (sort === "track") {
+      return (
+        String(left?.track || "").localeCompare(String(right?.track || ""), "pl") ||
+        newest(leftDate, rightDate) ||
+        fallback(left, right, -1)
+      );
+    }
+    if (sort === "competition") {
+      return (
+        String(left?.competition || "").localeCompare(String(right?.competition || ""), "pl") ||
+        newest(leftDate, rightDate) ||
+        fallback(left, right, -1)
+      );
+    }
+    return newest(leftDate, rightDate) || fallback(left, right, -1);
+  }
+
+  function filterEvents(events, filters = {}) {
+    const search = normalize(filters.search);
+    const team = normalize(filters.team);
+    let result = (events || []).filter((event) => {
+      if (filters.season && String(event?.season) !== String(filters.season)) return false;
+      if (filters.type && eventType(event) !== filters.type) return false;
+      if (filters.league && event?.league !== filters.league) return false;
+      if (filters.track && event?.track !== filters.track) return false;
+      if (filters.competition && event?.competition !== filters.competition) return false;
+      if (team && !(event?.teamKeys || []).some((value) => normalize(value) === team)) return false;
+      if (search && !normalize(event?.searchText || "").includes(search)) return false;
+      return true;
+    });
+
+    const time = filters.time || "all";
+    if (time === "latest") {
+      result = [...result].sort((a, b) => compareEvents(a, b, "newest")).slice(0, 20);
+    } else if (time === "7d" || time === "30d") {
+      const dated = result.map(eventTimestamp).filter((value) => value !== null);
+      if (dated.length) {
+        const anchor = Math.max(...dated);
+        const days = time === "7d" ? 7 : 30;
+        const minimum = anchor - (days - 1) * 86400000;
+        result = result.filter((event) => {
+          const value = eventTimestamp(event);
+          return value !== null && value >= minimum && value <= anchor;
+        });
+      } else {
+        result = [];
+      }
+    }
+    return [...result].sort((a, b) => compareEvents(a, b, filters.sort || "newest"));
+  }
+
+  function eventFilterFacets(events, filters = {}, limit = 7) {
+    const withoutLeague = { ...filters, league: "", sort: "newest" };
+    const counts = new Map();
+    for (const event of filterEvents(events, withoutLeague)) {
+      const league = String(event?.league || "").trim();
+      if (league) counts.set(league, (counts.get(league) || 0) + 1);
+    }
+    const leagues = [...counts]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pl"))
+      .slice(0, Math.max(0, Number(limit) || 0))
+      .map(([value, count]) => ({ value, count }));
+    if (filters.league && !leagues.some((item) => item.value === filters.league)) {
+      leagues.push({ value: filters.league, count: counts.get(filters.league) || 0 });
+    }
+    return { leagues };
+  }
+
   function seasonStats(records) {
     const grouped = new Map();
     for (const record of records || []) {
@@ -890,7 +985,15 @@
         playerB: playerDeepLinkKey(route.playerB),
       };
     }
-    if (route?.view === "events") return { view: "events" };
+    if (route?.view === "events") {
+      const eventsRoute = { view: "events" };
+      for (const field of ["eventSeason", "eventType", "eventLeague", "eventTrack", "eventCompetition", "eventSearch", "eventTeam"]) {
+        if (route[field]) eventsRoute[field] = String(route[field]);
+      }
+      if (["latest", "7d", "30d"].includes(route.eventTime)) eventsRoute.eventTime = route.eventTime;
+      if (["oldest", "track", "competition"].includes(route.eventSort)) eventsRoute.eventSort = route.eventSort;
+      return eventsRoute;
+    }
     return { view: "home" };
   }
 
@@ -898,6 +1001,18 @@
     const url = new URL(input, "https://app.invalid/");
     const eventKey = url.searchParams.get("event");
     if (eventKey) return { view: "event", eventKey };
+    if (url.searchParams.get("events") === "1") return normalizeRoute({
+      view: "events",
+      eventSeason: url.searchParams.get("eventSeason"),
+      eventType: url.searchParams.get("eventType"),
+      eventLeague: url.searchParams.get("eventLeague"),
+      eventTrack: url.searchParams.get("eventTrack"),
+      eventCompetition: url.searchParams.get("eventCompetition"),
+      eventSearch: url.searchParams.get("eventSearch"),
+      eventTeam: url.searchParams.get("eventTeam"),
+      eventTime: url.searchParams.get("eventTime"),
+      eventSort: url.searchParams.get("eventSort"),
+    });
     const playerKey = playerDeepLinkKey(url.searchParams.get("player"));
     if (playerKey) return normalizeRoute({
       view: "player",
@@ -922,7 +1037,11 @@
     const url = new URL(input, "https://app.invalid/");
     url.searchParams.delete("player");
     url.searchParams.delete("event");
+    url.searchParams.delete("events");
     for (const name of ["view", "line", "season", "league", "leagueFamily", "competition", "track", "tracks", "trackMode", "place", "last", "points"]) {
+      url.searchParams.delete(name);
+    }
+    for (const name of ["eventSeason", "eventType", "eventLeague", "eventTrack", "eventCompetition", "eventSearch", "eventTeam", "eventTime", "eventSort"]) {
       url.searchParams.delete(name);
     }
     const normalized = normalizeRoute(route);
@@ -944,6 +1063,11 @@
       if (normalized.pointsMode === "pointsBonus") url.searchParams.set("points", "pointsBonus");
     } else if (normalized.view === "event") {
       url.searchParams.set("event", normalized.eventKey);
+    } else if (normalized.view === "events") {
+      url.searchParams.set("events", "1");
+      for (const name of ["eventSeason", "eventType", "eventLeague", "eventTrack", "eventCompetition", "eventSearch", "eventTeam", "eventTime", "eventSort"]) {
+        if (normalized[name]) url.searchParams.set(name, normalized[name]);
+      }
     }
     url.hash = "";
     return url.toString();
@@ -1045,9 +1169,12 @@
     currentForm,
     eventSignature,
     eventDateValue,
+    eventFilterFacets,
+    eventType,
     formatEventUrl,
     formatPlayerUrl,
     filterRecords,
+    filterEvents,
     formChartPointAtPosition,
     formSeries,
     formStats,

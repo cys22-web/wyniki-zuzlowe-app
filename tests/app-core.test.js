@@ -903,3 +903,45 @@ test("advanced track selection round-trips through a player URL", () => {
   assert.equal(route.trackMode, "exclude");
   assert.equal(route.track, undefined);
 });
+
+const discoveryEvents = [
+  { key: "a", season: "2026", order: 1, eventDate: "2026-08-01", league: "Szwecja", track: "Malilla", competition: "IM", type: "individual", searchText: "Szwecja Malilla IM" },
+  { key: "b", season: "2026", order: 2, eventDate: "2026-08-10", league: "Polska", track: "Gorzów", competition: "Ekstraliga", type: "team", searchText: "Polska Gorzów Ekstraliga Stal Motor", teamKeys: ["Stal Gorzów", "Motor Lublin"] },
+  { key: "c", season: "2026", order: 3, eventDate: "2026-08-19", league: "Szwecja", track: "Vastervik", competition: "Elitserien", type: "team", searchText: "Szwecja Vastervik Elitserien" },
+  { key: "d", season: "2026", order: 4, eventDate: "2026-08-20", league: "Szwecja", track: "Malilla", competition: "Turniej", type: "individual", searchText: "Szwecja Malilla Turniej" },
+  { key: "e", season: "2026", order: 5, eventDate: "2026-08-24", league: "Niemcy", track: "Landshut", competition: "Bayern Cup", type: "multi", multiTeam: true, searchText: "Niemcy Landshut Bayern Cup" },
+  { key: "f", season: "2026", order: 6, eventDate: "2026-08-25", league: "Szwecja", track: "Kumla", competition: "Elitserien", type: "team", searchText: "Szwecja Kumla Elitserien" },
+];
+
+test("event discovery filters final logical event types and combined fields", () => {
+  assert.equal(core.filterEvents(discoveryEvents, {}).length, 6);
+  assert.deepEqual(core.filterEvents(discoveryEvents, { type: "team" }).map(event => event.key), ["f", "c", "b"]);
+  assert.deepEqual(core.filterEvents(discoveryEvents, { type: "individual" }).map(event => event.key), ["d", "a"]);
+  assert.deepEqual(core.filterEvents(discoveryEvents, { type: "multi" }).map(event => event.key), ["e"]);
+  assert.deepEqual(core.filterEvents(discoveryEvents, { season: "2026", league: "Szwecja", type: "individual", time: "30d" }).map(event => event.key), ["d", "a"]);
+});
+
+test("event discovery relative ranges anchor on the newest event in scope", () => {
+  assert.deepEqual(core.filterEvents(discoveryEvents, { time: "7d" }).map(event => event.key), ["f", "e", "d", "c"]);
+  assert.equal(core.filterEvents(discoveryEvents, { time: "30d" }).length, 6);
+  assert.deepEqual(core.filterEvents(discoveryEvents, { time: "latest" }).map(event => event.key), ["f", "e", "d", "c", "b", "a"]);
+});
+
+test("event discovery supports date and alphabetical sorting", () => {
+  assert.deepEqual(core.filterEvents(discoveryEvents, { sort: "oldest" }).map(event => event.key), ["a", "b", "c", "d", "e", "f"]);
+  assert.deepEqual(core.filterEvents(discoveryEvents, { sort: "track" }).map(event => event.track), ["Gorzów", "Kumla", "Landshut", "Malilla", "Malilla", "Vastervik"]);
+  assert.deepEqual(core.filterEvents(discoveryEvents, { sort: "competition" }).map(event => event.competition), ["Bayern Cup", "Ekstraliga", "Elitserien", "Elitserien", "IM", "Turniej"]);
+});
+
+test("event discovery route restores non-default filters only", () => {
+  const url = core.urlForRoute("https://wyniki-zuzlowe.vercel.app/", {
+    view: "events", eventSeason: "2026", eventType: "individual", eventLeague: "Szwecja",
+    eventTime: "30d", eventSort: "competition",
+  });
+  assert.match(url, /events=1/);
+  assert.doesNotMatch(url, /eventTrack=/);
+  assert.deepEqual(core.routeFromUrl(url), {
+    view: "events", eventSeason: "2026", eventType: "individual", eventLeague: "Szwecja",
+    eventTime: "30d", eventSort: "competition",
+  });
+});

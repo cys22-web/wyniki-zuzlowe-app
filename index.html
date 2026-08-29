@@ -53,18 +53,23 @@
 <section id="eventsSection" class="hidden">
   <div class="panel">
     <div class="compareHead"><button id="eventsBack" class="backBtn" title="Wróć">←</button><div><h2>Mecze i zawody</h2><p>Wyszukuj po klubie, torze, lidze, nazwie rozgrywek lub rundzie.</p></div></div>
+    <div class="eventQuickGroups">
+      <div><span>Typ zawodów</span><div id="eventTypeChips" class="eventChips" aria-label="Szybki filtr typu zawodów"></div></div>
+      <div><span>Zakres czasu</span><div id="eventTimeChips" class="eventChips" aria-label="Szybki filtr zakresu czasu"></div></div>
+      <div><span>Kraje / ligi w zakresie</span><div id="eventLeagueChips" class="eventChips" aria-label="Szybki filtr kraju lub ligi"></div></div>
+    </div>
     <div class="eventSearch"><input id="eventQ" autocomplete="off" placeholder="np. Krosno, Ekstraliga, GP, Vojens…"><button id="eventSearchBtn" class="primary">Szukaj</button></div>
     <div class="eventFilters">
       <div class="eventFilter"><label>Sezon</label><select id="eventSeason"></select></div>
-      <div class="eventFilter"><label>Typ</label><select id="eventType"><option value="">Mecze i zawody</option><option value="team">Mecze drużynowe</option><option value="individual">Zawody indywidualne</option></select></div>
+      <div class="eventFilter"><label>Typ</label><select id="eventType"><option value="">Mecze i zawody</option><option value="team">Mecze drużynowe</option><option value="individual">Zawody indywidualne</option><option value="multi">Zawody wielodrużynowe</option></select></div>
       <div class="eventFilter"><label>Kraj / liga</label><select id="eventLeague"></select></div>
       <div class="eventFilter"><label>Tor</label><select id="eventTrack"></select></div>
       <div class="eventFilter" style="grid-column:1/-1"><label>Rozgrywki</label><select id="eventComp"></select></div>
     </div>
     <div class="filterActions"><button id="eventClear" class="miniBtn">Wyczyść filtry</button></div>
-    <div class="eventHint">Sezony są pokazane od najnowszego. W każdym sezonie wydarzenia pozostają w kolejności arkusza: od najstarszych do najnowszych.</div>
+    <div class="eventHint">Zakresy 7 i 30 dni są liczone względem najpóźniejszej daty wydarzenia w aktualnym zakresie.</div>
   </div>
-  <div class="eventToolbar"><b id="eventCount"></b><span id="eventShown"></span></div>
+  <div class="eventToolbar"><div><b id="eventCount"></b><span id="eventShown"></span></div><label>Sortowanie <select id="eventSort" class="sortSelect"><option value="newest">najnowsze</option><option value="oldest">najstarsze</option><option value="track">tor A–Z</option><option value="competition">rozgrywki A–Z</option></select></label></div>
   <div id="eventList"></div><button id="eventMore" class="primary eventLoad hidden">Pokaż kolejne wydarzenia</button>
 </section>
 <section id="eventDetail" class="hidden">
