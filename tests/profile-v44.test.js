@@ -92,6 +92,7 @@ test("v4.8 exposes dates, heats, start numbers and advanced track controls", () 
   assert.match(app, /Numer startowy/);
   assert.match(app, /tracks:\[\.\.\.advancedTrackSelection\]/);
   assert.match(app, /CORE\.sortPlayerResults\(analysis\.results/);
+  assert.match(app, /round:val\(r\[11\]\),capacity:val\(r\[12\]\)/);
 });
 
 test("local PL2 import takes the start number from A without shifting existing fields", () => {

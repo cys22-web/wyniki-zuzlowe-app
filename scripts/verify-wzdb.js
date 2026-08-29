@@ -112,8 +112,10 @@ assert.ok(classifiedTeamEvents / teamEvents > 0.9, "Too few team events have an 
 
 let logicalEventCount = 0;
 let logicalMultiTeamEvents = 0;
+let logicalFragmentedIndividualEvents = 0;
 const mergedEventExamples = [];
 let hallstavikDivisionOne = null;
+let alburyRounds = [];
 let eventDateStats2026 = null;
 for (const [season, refs] of Object.entries(database.events || {})) {
   const rows = database.years[season];
@@ -141,10 +143,13 @@ for (const [season, refs] of Object.entries(database.events || {})) {
   const logical = core.mergeAdjacentEvents(physical);
   logicalEventCount += logical.length;
   for (const event of logical) {
-    if (!event.multiTeam) continue;
-    logicalMultiTeamEvents += 1;
-    if (mergedEventExamples.length < 5) {
-      mergedEventExamples.push({ season, league: event.league, track: event.track, competition: event.competition, round: event.round, participants: event.count, teams: event.teams.length });
+    if (event.multiTeam) {
+      logicalMultiTeamEvents += 1;
+      if (mergedEventExamples.length < 5) {
+        mergedEventExamples.push({ season, league: event.league, track: event.track, competition: event.competition, round: event.round, participants: event.count, teams: event.teams.length });
+      }
+    } else if (event.fragmentCount > 1 && event.eventDate) {
+      logicalFragmentedIndividualEvents += 1;
     }
   }
   if (season === "2026") {
@@ -188,6 +193,12 @@ for (const [season, refs] of Object.entries(database.events || {})) {
       event.competition === "Division 1" &&
       event.round === "13 runda"
     ) || hallstavikDivisionOne;
+    alburyRounds = logical.filter((event) =>
+      event.league === "Australia" &&
+      event.track === "Albury-Wodonga" &&
+      event.competition === "IM Australii" &&
+      ["1 runda", "2 runda"].includes(event.round)
+    );
   }
 }
 for (const field of Object.keys(eventDateStats2026)) {
@@ -211,10 +222,20 @@ if (version.date_map_sha256 !== null) {
 }
 assert.ok(hallstavikDivisionOne, "Hallstavik Division 1 round 13 is missing");
 assert.ok(logicalMultiTeamEvents > 100, "Too few multi-team fragment groups were recognized across WZDB");
+assert.ok(logicalFragmentedIndividualEvents > 0, "No dated individual fragment groups were recognized across WZDB");
 assert.equal(hallstavikDivisionOne.count, 13, "Hallstavik event does not contain all 13 riders");
 assert.equal(hallstavikDivisionOne.fragmentCount, 4, "Hallstavik event did not merge four fragments");
 assert.deepEqual(hallstavikDivisionOne.teams.map((team) => team.name), [
   "Team Campus Roslagen", "Smederna B", "Gnistorna Malmoe", "Piraterna B",
+]);
+assert.equal(alburyRounds.length, 2, "Albury IM Australii should have one logical event per round");
+assert.deepEqual(alburyRounds.map((event) => ({
+  round: event.round,
+  date: event.eventDate,
+  participants: event.count,
+})), [
+  { round: "1 runda", date: "2026-01-03", participants: 17 },
+  { round: "2 runda", date: "2026-01-04", participants: 17 },
 ]);
 
 const observedHeatCodes = new Set();
@@ -251,12 +272,19 @@ console.log(JSON.stringify({
   stableEventKeys: eventKeys.size,
   logicalEvents: logicalEventCount,
   logicalMultiTeamEvents,
+  logicalFragmentedIndividualEvents,
   mergedEventExamples,
   hallstavikDivisionOne: {
     participants: hallstavikDivisionOne.count,
     fragments: hallstavikDivisionOne.fragmentCount,
     teams: hallstavikDivisionOne.teams,
   },
+  alburyRounds: alburyRounds.map((event) => ({
+    round: event.round,
+    date: event.eventDate,
+    participants: event.count,
+    fragments: event.fragmentCount,
+  })),
   homeAwayClassification: {
     teamEvents,
     classifiedTeamEvents,

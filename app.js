@@ -156,7 +156,7 @@ function ensureEvents(){
       for(let i=0;i<rows.length;i++){const k=evKey(rows[i]);if(prev===null||k!==prev){if(i>start)ev.push([start,i-start]);start=i}prev=k}
       if(rows.length>start)ev.push([start,rows.length-start]);DB.events[y]=ev;
     }
-    const physical=DB.events[y].map(([start,count,fragmentCount,teams,eventDateIndex])=>{const r=rows[start],eventDate=typeof eventDateIndex==='string'?eventDateIndex:val(eventDateIndex);return {start,count,fragmentCount,teams,eventDate,season:y,home:val(r[5]),away:val(r[6]),score:val(r[7]),league:val(r[8]),track:val(r[9]),competition:val(r[10]),round:val(r[11])}});
+    const physical=DB.events[y].map(([start,count,fragmentCount,teams,eventDateIndex])=>{const r=rows[start],eventDate=typeof eventDateIndex==='string'?eventDateIndex:val(eventDateIndex);return {start,count,fragmentCount,teams,eventDate,season:y,home:val(r[5]),away:val(r[6]),score:val(r[7]),league:val(r[8]),track:val(r[9]),competition:val(r[10]),round:val(r[11]),capacity:val(r[12])}});
     const logical=CORE.mergeAdjacentEvents(physical),conflicts=logical.filter(event=>event.eventDateConflict);
     for(const event of conflicts){const diagnostic={season:y,start:event.start,count:event.count,dates:event.eventDateCandidates};DB.eventDateDiagnostics.push(diagnostic);console.error('Sprzeczne eventDate w fragmentach wydarzenia; data nie została przypisana.',diagnostic)}
     DB.events[y]=logical.map(event=>[event.start,event.count,event.fragmentCount,event.teams,event.eventDate||'']);

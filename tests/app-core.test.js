@@ -224,6 +224,68 @@ test("logical event merge stays conservative for groups, rounds and individual c
   assert.equal(matches.length, 2);
 });
 
+test("dated Albury individual fragments become one card per round", () => {
+  const base = {
+    season: "2026",
+    league: "Australia",
+    track: "Albury-Wodonga",
+    competition: "IM Australii",
+    capacity: "",
+  };
+  const roundOne = [
+    { ...base, round: "1 runda", eventDate: "2026-01-03", start: 0, count: 4, home: "", away: "", score: "" },
+    { ...base, round: "1 runda", eventDate: "2026-01-03", start: 4, count: 4, home: "2", away: "miejsce w finale", score: "" },
+    { ...base, round: "1 runda", eventDate: "2026-01-03", start: 8, count: 4, home: "3", away: "miejsce w finale", score: "" },
+    { ...base, round: "1 runda", eventDate: "2026-01-03", start: 12, count: 5, home: "", away: "", score: "" },
+  ];
+  const roundTwo = [
+    { ...base, round: "2 runda", eventDate: "2026-01-04", start: 17, count: 1, home: "", away: "", score: "" },
+    { ...base, round: "2 runda", eventDate: "2026-01-04", start: 18, count: 1, home: "2", away: "miejsce w finale", score: "" },
+    { ...base, round: "2 runda", eventDate: "2026-01-04", start: 19, count: 1, home: "3", away: "miejsce w finale", score: "" },
+    { ...base, round: "2 runda", eventDate: "2026-01-04", start: 20, count: 14, home: "", away: "", score: "" },
+  ];
+
+  const logicalCards = core.mergeAdjacentEvents([...roundOne, ...roundTwo]);
+
+  assert.equal(logicalCards.length, 2);
+  assert.deepEqual(logicalCards.map((event) => ({
+    round: event.round,
+    date: event.eventDate,
+    participants: event.count,
+    fragments: event.fragmentCount,
+  })), [
+    { round: "1 runda", date: "2026-01-03", participants: 17, fragments: 4 },
+    { round: "2 runda", date: "2026-01-04", participants: 17, fragments: 4 },
+  ]);
+});
+
+test("dated individual merge respects category, date and team-match boundaries", () => {
+  const base = {
+    season: "2026",
+    league: "Miniżużel",
+    track: "Glasgow",
+    competition: "British Youth Championship",
+    round: "1 runda",
+  };
+  const categories = core.mergeAdjacentEvents([
+    { ...base, start: 0, count: 8, capacity: "125 ccm", eventDate: "2026-04-12" },
+    { ...base, start: 8, count: 7, capacity: "250 ccm", eventDate: "2026-04-12" },
+  ]);
+  assert.equal(categories.length, 2);
+
+  const dates = core.mergeAdjacentEvents([
+    { ...base, start: 0, count: 8, capacity: "125 ccm", eventDate: "2026-04-12" },
+    { ...base, start: 8, count: 7, capacity: "125 ccm", eventDate: "2026-04-13" },
+  ]);
+  assert.equal(dates.length, 2);
+
+  const matches = core.mergeAdjacentEvents([
+    { ...base, start: 0, count: 14, capacity: "", eventDate: "2026-04-12", home: "Glasgow", away: "Oxford", score: "48-42" },
+    { ...base, start: 14, count: 14, capacity: "", eventDate: "2026-04-12", home: "Leicester", away: "Ipswich", score: "46-44" },
+  ]);
+  assert.equal(matches.length, 2);
+});
+
 test("comparison track selector is the annotated union of both riders", () => {
   assert.deepEqual(core.comparisonTrackOptions(
     ["Krosno", "Lublin"],

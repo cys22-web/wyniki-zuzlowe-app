@@ -643,6 +643,40 @@
   function mergeAdjacentEvents(events) {
     const source = events || [];
     const merged = [];
+
+    const appendSeparate = (eventsToAppend) => {
+      for (const event of eventsToAppend) {
+        merged.push({
+          ...event,
+          fragmentCount: Number(event.fragmentCount || 1),
+          multiTeam: Boolean(event.multiTeam),
+          teams: Array.isArray(event.teams) ? event.teams : [],
+          eventDate: event.eventDate || null,
+          eventDateConflict: Boolean(event.eventDateConflict),
+          eventDateCandidates: Array.isArray(event.eventDateCandidates) ? event.eventDateCandidates : [],
+        });
+      }
+    };
+
+    const appendMerged = (run, teams, multiTeam) => {
+      const first = run[0];
+      const last = run.at(-1);
+      const eventDateCandidates = [...new Set(
+        run.map((event) => String(event?.eventDate || "").trim()).filter(Boolean)
+      )];
+      const eventDateConflict = eventDateCandidates.length > 1;
+      merged.push({
+        ...first,
+        count: Number(last.start) + Number(last.count) - Number(first.start),
+        fragmentCount: run.reduce((sum, event) => sum + Number(event.fragmentCount || 1), 0),
+        multiTeam,
+        teams,
+        eventDate: eventDateCandidates.length === 1 ? eventDateCandidates[0] : null,
+        eventDateConflict,
+        eventDateCandidates: eventDateConflict ? eventDateCandidates : [],
+      });
+    };
+
     for (let index = 0; index < source.length;) {
       const first = source[index];
       const signature = logicalEventSignature(first);
@@ -660,13 +694,6 @@
       ) end += 1;
 
       const run = source.slice(index, end);
-      const eventDateCandidates = [...new Set(
-        run.map((event) => String(event?.eventDate || "").trim()).filter(Boolean)
-      )];
-      const eventDateConflict = eventDateCandidates.length > 1;
-      const eventDate = eventDateCandidates.length === 1
-        ? eventDateCandidates[0]
-        : null;
       const teams = [];
       const seenTeams = new Set();
       for (const event of run) {
@@ -682,28 +709,43 @@
       }
 
       if (strong && run.length > 1 && teams.length > 1) {
-        const last = run.at(-1);
-        merged.push({
-          ...first,
-          count: Number(last.start) + Number(last.count) - Number(first.start),
-          fragmentCount: run.reduce((sum, event) => sum + Number(event.fragmentCount || 1), 0),
-          multiTeam: true,
-          teams,
-          eventDate,
-          eventDateConflict,
-          eventDateCandidates: eventDateConflict ? eventDateCandidates : [],
-        });
+        // Preserve the established merge for multi-team standings, including
+        // legacy seasons that do not have event dates yet.
+        appendMerged(run, teams, true);
       } else {
-        for (const event of run) {
-          merged.push({
-            ...event,
-            fragmentCount: Number(event.fragmentCount || 1),
-            multiTeam: Boolean(event.multiTeam),
-            teams: Array.isArray(event.teams) ? event.teams : [],
-            eventDate: event.eventDate || null,
-            eventDateConflict: Boolean(event.eventDateConflict),
-            eventDateCandidates: Array.isArray(event.eventDateCandidates) ? event.eventDateCandidates : [],
-          });
+        /*
+         * G:I is overloaded in PL2. Team matches store home/away/score there,
+         * while individual meetings can store rider-specific final or
+         * semi-final placing. Preserve those physical keys, then join only a
+         * row-contiguous, fully dated, non-team occurrence. Capacity remains
+         * a hard category boundary (for example 125 ccm versus 250 ccm).
+         */
+        let groupIndex = 0;
+        while (groupIndex < run.length) {
+          const capacity = normalize(run[groupIndex]?.capacity);
+          let groupEnd = groupIndex + 1;
+          while (
+            groupEnd < run.length &&
+            normalize(run[groupEnd]?.capacity) === capacity
+          ) groupEnd += 1;
+
+          const capacityGroup = run.slice(groupIndex, groupEnd);
+          const eventDate = String(capacityGroup[0]?.eventDate || "").trim();
+          const sameDate = Boolean(eventDate) && capacityGroup.every(
+            (event) => String(event?.eventDate || "").trim() === eventDate
+          );
+          const teamShaped = capacityGroup.some((event) =>
+            (String(event?.score || "").trim() &&
+              (String(event?.home || "").trim() || String(event?.away || "").trim())) ||
+            (Array.isArray(event?.teams) && event.teams.length)
+          );
+
+          if (strong && capacityGroup.length > 1 && sameDate && !teamShaped) {
+            appendMerged(capacityGroup, [], false);
+          } else {
+            appendSeparate(capacityGroup);
+          }
+          groupIndex = groupEnd;
         }
       }
       index = end;
