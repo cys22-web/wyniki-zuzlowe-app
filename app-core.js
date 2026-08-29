@@ -322,6 +322,29 @@
     };
   }
 
+  const QUICK_LEAGUE_FAMILIES = [
+    { id: "premiership", label: "Premiership" },
+    { id: "denmark", label: "Dania" },
+    { id: "elitserien", label: "Elitserien" },
+  ];
+
+  function leagueQuickFilterMatches(record, family) {
+    const league = normalize(record?.league);
+    const competition = normalize(record?.competition);
+    if (family === "premiership") return league === "premiership";
+    if (family === "elitserien") return league === "elitserien";
+    if (family === "denmark") return league === "dania" && competition === "dm danii";
+    return false;
+  }
+
+  function leagueQuickFilters(records) {
+    return QUICK_LEAGUE_FAMILIES
+      .filter((family) => (records || []).some((record) =>
+        leagueQuickFilterMatches(record, family.id)
+      ))
+      .map((family) => ({ ...family }));
+  }
+
   function filterRecords(records, filters = {}) {
     const search = normalize(filters.search);
     const selectedTracks = new Set(
@@ -333,6 +356,7 @@
     return (records || []).filter((record) => {
       if (filters.season && String(record.season) !== String(filters.season)) return false;
       if (filters.league && record.league !== filters.league) return false;
+      if (filters.leagueFamily && !leagueQuickFilterMatches(record, filters.leagueFamily)) return false;
       if (filters.competition && record.competition !== filters.competition) return false;
       if (filters.track && record.track !== filters.track) return false;
       if (selectedTracks.size) {
@@ -416,6 +440,42 @@
     const count = Number(limit) || 0;
     if (!count) return sortPlayerResults(records, "old");
     return sortPlayerResults(records, "new").slice(0, count).reverse();
+  }
+
+  function trackHistory(records, track, options = {}) {
+    const filtered = filterRecords(records, {
+      track,
+      season: options.season || "",
+    });
+    return {
+      track: String(track || ""),
+      records: sortPlayerResults(filtered, "new"),
+      metric: playerMetric(filtered),
+      last5: sortPlayerResults(filtered, "new").slice(0, 5),
+    };
+  }
+
+  function formSeries(records, limit = 10, metric = "points") {
+    const count = limit === "all" || Number(limit) === 0 ? 0 : Number(limit) || 10;
+    return lastRecords(records, count).map((record) => {
+      const points = parsePointsBreakdown(record.points);
+      const heats = parseHeats(record.heats);
+      const heatAverage = points.pointsReliable && heats.rides
+        ? points.points / heats.rides
+        : null;
+      return {
+        record,
+        eventKey: String(record.eventKey || record.key || ""),
+        date: record.eventDate || record.date || "",
+        track: String(record.track || ""),
+        competition: String(record.competition || ""),
+        round: String(record.round || ""),
+        points: points.pointsReliable ? points.points : null,
+        heats: heats.rides,
+        heatAverage,
+        value: metric === "heat" ? heatAverage : points.pointsReliable ? points.points : null,
+      };
+    });
   }
 
   function median(values) {
@@ -782,7 +842,7 @@
       };
       if (["stats", "threshold"].includes(route.profileView)) playerRoute.profileView = route.profileView;
       if (route.threshold !== undefined && route.threshold !== null && route.threshold !== "") playerRoute.threshold = route.threshold;
-      for (const field of ["season", "league", "competition", "track"]) {
+      for (const field of ["season", "league", "leagueFamily", "competition", "track"]) {
         if (route[field]) playerRoute[field] = route[field];
       }
       if (Array.isArray(route.tracks)) {
@@ -824,6 +884,7 @@
       threshold: url.searchParams.get("line") || undefined,
       season: url.searchParams.get("season"),
       league: url.searchParams.get("league"),
+      leagueFamily: url.searchParams.get("leagueFamily"),
       competition: url.searchParams.get("competition"),
       track: url.searchParams.get("track"),
       tracks: (url.searchParams.get("tracks") || "").split(",").filter(Boolean),
@@ -839,7 +900,7 @@
     const url = new URL(input, "https://app.invalid/");
     url.searchParams.delete("player");
     url.searchParams.delete("event");
-    for (const name of ["view", "line", "season", "league", "competition", "track", "tracks", "trackMode", "place", "last", "points"]) {
+    for (const name of ["view", "line", "season", "league", "leagueFamily", "competition", "track", "tracks", "trackMode", "place", "last", "points"]) {
       url.searchParams.delete(name);
     }
     const normalized = normalizeRoute(route);
@@ -849,6 +910,7 @@
       if (normalized.profileView === "threshold" && normalized.threshold !== undefined) url.searchParams.set("line", normalized.threshold);
       if (normalized.season) url.searchParams.set("season", normalized.season);
       if (normalized.league) url.searchParams.set("league", normalized.league);
+      if (normalized.leagueFamily) url.searchParams.set("leagueFamily", normalized.leagueFamily);
       if (normalized.competition) url.searchParams.set("competition", normalized.competition);
       if (normalized.track) url.searchParams.set("track", normalized.track);
       if (normalized.tracks?.length) {
@@ -938,10 +1000,13 @@
     formatEventUrl,
     formatPlayerUrl,
     filterRecords,
+    formSeries,
     formStats,
     latestEventRefs,
     logicalEventSignature,
     lastRecords,
+    leagueQuickFilterMatches,
+    leagueQuickFilters,
     normalize,
     normalizeRoute,
     playerDeepLinkKey,
@@ -959,6 +1024,7 @@
     stableEventKey,
     stableHash,
     thresholdTrend,
+    trackHistory,
     urlForRoute,
   };
 });

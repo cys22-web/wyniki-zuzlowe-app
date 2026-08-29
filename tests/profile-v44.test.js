@@ -82,6 +82,18 @@ test("service-worker controller change performs at most one guarded reload", asy
   assert.equal(storage.get("wz-pwa-controller-reload-v48"), "1");
 });
 
+test("stage A profile exposes track history and filtered form ranges", () => {
+  assert.match(html, /id="trackHistorySummary"/);
+  assert.match(html, /id="formChartRange"/);
+  for (const value of ["5", "10", "20", "all"]) {
+    assert.match(html, new RegExp(`data-form-limit="${value}"`));
+  }
+  assert.match(app, /data-track-history/);
+  assert.match(app, /CORE\.leagueQuickFilters\(records\)/);
+  assert.match(app, /CORE\.formSeries\(records,formChartLimit,formChartMetric\)/);
+  assert.match(app, /eventKeyMap\.get\(point\.dataset\.formEvent\)/);
+});
+
 test("v4.8 exposes dates, heats, start numbers and advanced track controls", () => {
   for (const id of ["multiTrackToggle", "multiTrackPanel", "multiTrackSearch", "multiTrackOptions"]) {
     assert.match(html, new RegExp(`id="${id}"`));

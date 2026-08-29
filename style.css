@@ -30,6 +30,10 @@
 @media(max-width:620px){.currentForm{grid-template-columns:1fr}.thumbFilters{grid-template-columns:1fr}.thresholdFilters .filter:nth-child(-n+2){display:none}.thresholdTrends{grid-template-columns:1fr 1fr}.thresholdTrends span:last-child{grid-column:1/-1}.cmpFormGridCards{grid-template-columns:1fr 1fr;gap:5px}.cmpFormCard{padding:8px}.cmpFormGrid{grid-template-columns:1fr}.formChartHeading{display:block}.formChartHeading>span{display:block;text-align:left;margin-top:7px}}
 @media(max-width:390px){.profileChips{margin-left:-2px;margin-right:-2px}.cmpFormGridCards{gap:4px}.cmpFormCard{padding:7px}.cmpFormResults b{font-size:9.5px}.cmpFormGrid span{padding:5px}.currentForm{gap:6px}}
 
+/* Etap A: szybkie ligi, historia toru i forma zawodnika. */
+.trackHistoryAction{margin-top:9px;border:1px solid #355071;background:#0b192b;color:#bcd8f7;border-radius:10px;padding:8px 10px;font-size:10px;font-weight:850;cursor:pointer}.trackHistoryAction:hover{border-color:#ff8b45;color:#ffd0ad}.trackHistorySummary{margin:0 0 11px}.trackHistoryHead{display:flex;justify-content:space-between;align-items:center;gap:12px}.trackHistoryHead span{display:block;color:#86a0c2;text-transform:uppercase;letter-spacing:.08em;font-size:9px;font-weight:900}.trackHistoryHead h3{margin:3px 0 0;font-size:17px}.trackHistoryMetrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:10px}.trackHistoryMetrics span{display:flex;flex-direction:column;gap:3px;min-width:0;background:#091321;border-radius:10px;padding:8px;color:var(--muted);font-size:9px}.trackHistoryMetrics b{color:var(--text);font-size:11px;overflow-wrap:anywhere}.formChartRange{margin:11px 0 4px;overflow-x:auto}.formChart .chartPoint.clickable{cursor:pointer}.formChart .chartPoint:focus circle,.formChart .chartPoint:hover circle{stroke:#ffd0ad;stroke-width:3}
+@media(max-width:620px){.trackHistoryMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}.trackHistoryAction{min-height:40px}.formChartRange button{flex:1}}
+
 /* v4.6 — logiczne wydarzenia i niezależne zbiory porównania */
 
 /* v4.8 — daty wydarzeń z kolumny Q PL2 */

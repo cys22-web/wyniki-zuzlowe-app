@@ -440,4 +440,93 @@ document.querySelectorAll('input[name="multiTrackMode"]').forEach(input=>input.o
 const _selectPlayerV45=selectPlayer;
 selectPlayer=function(pid){if(!routeApplying){$('thresholdPlace').value='';$('thresholdLast').value='0';advancedTrackSelection.clear();advancedTrackMode='include';advancedTrackQuery=''}return _selectPlayerV45(pid)};
 
+// ===== etap A: ligi profilu, historia toru i wykres formy =====
+let activeLeagueFamily='',formChartLimit='10';
+
+const _playerFilterValuesStageA=playerFilterValues;
+playerFilterValues=function(){return {..._playerFilterValuesStageA(),leagueFamily:activeLeagueFamily}};
+
+renderQuickProfileFilters=function(){
+  if(currentPid===null)return;
+  const records=metricRecords(currentAll),seasons=[...new Set(records.map(record=>record.season))].sort((a,b)=>+b-+a),latest=seasons[0]||'',ekstraligaCompetition=records.find(record=>CORE.normalize(record.competition)==='ekstraliga')?.competition||'',ekstraligaLeague=records.find(record=>CORE.normalize(record.league)==='ekstraliga')?.league||'',buttons=[];
+  if(latest)buttons.push({type:'season',value:latest,label:latest,active:$('season').value===latest});
+  if(ekstraligaCompetition)buttons.push({type:'competition',value:ekstraligaCompetition,label:'Ekstraliga',active:$('comp').value===ekstraligaCompetition&&!activeLeagueFamily});
+  else if(ekstraligaLeague)buttons.push({type:'league',value:ekstraligaLeague,label:'Ekstraliga',active:$('league').value===ekstraligaLeague&&!activeLeagueFamily});
+  for(const family of CORE.leagueQuickFilters(records))buttons.push({type:'leagueFamily',value:family.id,label:family.label,active:activeLeagueFamily===family.id});
+  buttons.push({type:'place',value:'HOME',label:'Dom',active:$('thresholdPlace').value==='HOME'},{type:'place',value:'AWAY',label:'Wyjazd',active:$('thresholdPlace').value==='AWAY'},{type:'last',value:'5',label:'Ostatnie 5',active:$('thresholdLast').value==='5'},{type:'last',value:'10',label:'Ostatnie 10',active:$('thresholdLast').value==='10'});
+  $('quickProfileFilters').innerHTML=buttons.map(item=>`<button class="${item.active?'active':''}" data-quick-type="${item.type}" data-quick-value="${esc(item.value)}">${esc(item.label)}</button>`).join('')+'<button class="clearChip" data-quick-type="clear">× Wyczyść</button>';
+  $('quickProfileFilters').querySelectorAll('[data-quick-type]').forEach(button=>button.onclick=()=>{
+    const type=button.dataset.quickType,value=button.dataset.quickValue;
+    if(type==='season')$('season').value=$('season').value===value?'':value;
+    else if(type==='league'){$('league').value=$('league').value===value?'':value;activeLeagueFamily='';}
+    else if(type==='competition'){$('comp').value=$('comp').value===value?'':value;activeLeagueFamily='';}
+    else if(type==='leagueFamily'){activeLeagueFamily=activeLeagueFamily===value?'':value;$('league').value='';$('comp').value='';}
+    else if(type==='place')$('thresholdPlace').value=$('thresholdPlace').value===value?'':value;
+    else if(type==='last')$('thresholdLast').value=$('thresholdLast').value===value?'0':value;
+    else if(type==='clear'){clearProfileFiltersV45();return;}
+    applyFilters();persistHistoryContext();
+  });
+};
+
+const _clearProfileFiltersStageA=clearProfileFiltersV45;
+clearProfileFiltersV45=function(){activeLeagueFamily='';_clearProfileFiltersStageA()};
+
+const _playerScopeStageA=playerScope;
+playerScope=function(){const family=CORE.leagueQuickFilters(metricRecords(currentAll)).find(item=>item.id===activeLeagueFamily)?.label;return family?[family,_playerScopeStageA()==='Cała kariera'?'':_playerScopeStageA()].filter(Boolean).join(' • '):_playerScopeStageA()};
+
+function renderTrackHistorySummary(){
+  const box=$('trackHistorySummary'),track=!advancedTrackSelection.size?$('track').value:'';
+  if(!box||!track){box?.classList.add('hidden');return;}
+  const history=CORE.trackHistory(profileFilteredModel,track),metric=history.metric,last5=history.last5.map(record=>record.points||'—').join(' • ')||'—';
+  box.innerHTML=`<div class="trackHistoryHead"><div><span>Historia na torze</span><h3>${esc(track)}</h3></div><button class="miniBtn" data-clear-track-history>Wyczyść tor</button></div><div class="trackHistoryMetrics"><span>Starty <b>${metric.starts}</b></span><span>Biegi <b>${metric.heats}</b></span><span>Punkty <b>${fmtScore(metric.total)}</b></span><span>Bonusy <b>${fmtScore(metric.bonus)}</b></span><span>Śr. pkt/start <b>${fmtNum(metric.avg)}</b></span><span>Śr. biegowa <b>${fmtNum(metric.heatAvg,3)}</b></span><span>Najlepszy wynik <b>${fmtScore(metric.best)}</b></span><span>Ostatnie 5 <b>${esc(last5)}</b></span></div>`;
+  box.classList.remove('hidden');box.querySelector('[data-clear-track-history]').onclick=()=>{$('track').value='';applyFilters();persistHistoryContext()};
+}
+
+function openTrackHistory(track){
+  const season=$('season').value;
+  activeLeagueFamily='';advancedTrackSelection.clear();advancedTrackMode='include';advancedTrackQuery='';
+  $('league').value='';$('comp').value='';$('within').value='';$('thresholdPlace').value='';$('thresholdLast').value='0';
+  refreshPlayerFilterOptions();$('season').value=season;$('track').value=track;
+  applyFilters();persistHistoryContext();scrollTo({top:$('playerNav').offsetTop||0,behavior:'smooth'});
+}
+
+const _cardV4StageA=cardV4;
+cardV4=function(y,r,i){const html=_cardV4StageA(y,r,i),track=val(r[9]);return track?html.replace('</article>',`<button class="trackHistoryAction" data-track-history="${esc(track)}">Historia na tym torze</button></article>`):html};
+const _renderResultsStageA=renderResults;
+renderResults=function(){_renderResultsStageA();$('results').querySelectorAll('[data-track-history]').forEach(button=>button.onclick=event=>{event.stopPropagation();openTrackHistory(button.dataset.trackHistory)})};
+
+renderFormChart=function(records){
+  const box=$('formChart'),status=$('formChartValue');if(!box)return;
+  const all=CORE.formSeries(records,formChartLimit,formChartMetric),series=all.filter(item=>item.value!==null);
+  $('formChartToggle').querySelectorAll('[data-form-metric]').forEach(button=>button.classList.toggle('active',button.dataset.formMetric===formChartMetric));
+  $('formChartRange').querySelectorAll('[data-form-limit]').forEach(button=>button.classList.toggle('active',button.dataset.formLimit===formChartLimit));
+  if(!series.length){box.innerHTML='<div class="chartEmpty">Brak wiarygodnych danych do wykresu formy.</div>';status.textContent='';return;}
+  const width=720,height=250,left=38,right=18,top=20,bottom=35,plotW=width-left-right,plotH=height-top-bottom,max=Math.max(1,...series.map(item=>item.value)),min=Math.min(0,...series.map(item=>item.value)),range=Math.max(1,max-min),x=index=>left+(series.length===1?plotW/2:index*plotW/(series.length-1)),y=value=>top+(max-value)*plotH/range;
+  let svg=`<svg class="formChart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Forma zawodnika: ${esc(formChartLimit==='all'?'wszystkie wyniki':`ostatnie ${formChartLimit} wyników`)}">`;
+  for(let i=0;i<=4;i++){const value=max-range*i/4,gy=top+i*plotH/4;svg+=`<line class="chartGrid" x1="${left}" y1="${gy}" x2="${width-right}" y2="${gy}"></line><text class="chartAxis" x="${left-6}" y="${gy+4}" text-anchor="end">${fmtNum(value,1)}</text>`;}
+  if(series.length>1)svg+=`<path class="formResultLine" d="${series.map((item,index)=>`${index?'L':'M'} ${x(index)} ${y(item.value)}`).join(' ')}"></path>`;
+  series.forEach((item,index)=>{const record=item.record,label=[item.date?fmtDate(item.date):record.season,item.track,item.competition,item.round,`${record.points||'—'} pkt`,record.heats?`biegi ${record.heats}`:'',item.heatAverage===null?'':`śr. biegowa ${fmtNum(item.heatAverage,3)}`].filter(Boolean).join(' • ');svg+=`<g class="chartPoint${item.eventKey?' clickable':''}" tabindex="0" data-form-label="${esc(label)}" ${item.eventKey?`data-form-event="${esc(item.eventKey)}"`:''}><circle cx="${x(index)}" cy="${y(item.value)}" r="6"></circle><title>${esc(label)}</title></g>`;});
+  box.innerHTML=svg+'</svg>';const show=event=>{status.textContent=event.currentTarget.dataset.formLabel};
+  box.querySelectorAll('[data-form-label]').forEach(point=>{point.addEventListener('pointerenter',show);point.addEventListener('pointerdown',show);point.addEventListener('focus',show);point.addEventListener('click',()=>{const ref=eventKeyMap.get(point.dataset.formEvent);if(ref)openEventDetail(ref[0],ref[1],'profile')})});
+  status.textContent=[all.at(-1)?.date?fmtDate(all.at(-1).date):all.at(-1)?.record?.season,all.at(-1)?.track,all.at(-1)?.record?.points?`${all.at(-1).record.points} pkt`:''].filter(Boolean).join(' • ');
+};
+
+const _applyFiltersStageA=applyFilters;
+applyFilters=function(){_applyFiltersStageA();renderTrackHistorySummary()};
+
+const _currentRouteStageA=currentRoute;
+currentRoute=function(){const route=_currentRouteStageA();return route.view==='player'?{...route,leagueFamily:activeLeagueFamily}:route};
+const _applyRouteStageA=applyRoute;
+applyRoute=async function(route,context=null){activeLeagueFamily='';await _applyRouteStageA(route,context);const next=CORE.normalizeRoute(route);if(next.view==='player'&&currentPid!==null){activeLeagueFamily=next.leagueFamily||'';applyFilters()}};
+
+const _selectPlayerStageA=selectPlayer;
+selectPlayer=function(pid){activeLeagueFamily='';const result=_selectPlayerStageA(pid);renderTrackHistorySummary();return result};
+const _hidePlayerStageA=hidePlayerV44;
+hidePlayerV44=function(){_hidePlayerStageA();$('trackHistorySummary').classList.add('hidden')};
+
+$('formChartRange').querySelectorAll('[data-form-limit]').forEach(button=>button.onclick=()=>{formChartLimit=button.dataset.formLimit;renderFormChart(metricRecords(filtered))});
+$('formChartToggle').querySelectorAll('[data-form-metric]').forEach(button=>button.onclick=()=>{formChartMetric=button.dataset.formMetric;renderFormChart(metricRecords(filtered))});
+$('league').addEventListener('change',()=>{if(!activeLeagueFamily)return;activeLeagueFamily='';applyFilters();persistHistoryContext()});$('comp').addEventListener('change',()=>{if(!activeLeagueFamily||!$('comp').value)return;activeLeagueFamily='';applyFilters();persistHistoryContext()});
+$('clearFilters').onclick=clearProfileFiltersV45;$('statsClear').onclick=clearProfileFiltersV45;
+
 startup();

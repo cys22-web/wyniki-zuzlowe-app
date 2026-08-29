@@ -457,6 +457,88 @@ test("player results without dates fall back to season and lower Excel rows firs
   ]);
 });
 
+test("dynamic league family round-trips in a player URL", () => {
+  const url = core.urlForRoute("https://wyniki-zuzlowe.vercel.app/", {
+    view: "player",
+    playerKey: "Example Rider",
+    leagueFamily: "elitserien",
+  });
+  assert.deepEqual(core.routeFromUrl(url), {
+    view: "player",
+    playerKey: "example rider",
+    leagueFamily: "elitserien",
+  });
+});
+
+test("quick league filters expose only families present in rider records", () => {
+  const all = core.leagueQuickFilters([
+    { league: "Premiership", competition: "" },
+    { league: "Dania", competition: "DM Danii" },
+    { league: "Elitserien", competition: "" },
+  ]);
+  assert.deepEqual(all.map((item) => item.label), ["Premiership", "Dania", "Elitserien"]);
+
+  assert.deepEqual(core.leagueQuickFilters([
+    { league: "Premiership", competition: "" },
+  ]).map((item) => item.label), ["Premiership"]);
+});
+
+test("quick league filters reject adjacent competitions", () => {
+  assert.deepEqual(core.leagueQuickFilters([
+    { league: "Championship", competition: "" },
+    { league: "Allsvenskan", competition: "" },
+    { league: "Dania", competition: "IM Danii" },
+    { league: "Dania", competition: "Division 1" },
+  ]), []);
+});
+
+test("quick league family filtering uses the same conservative matchers", () => {
+  const records = [
+    { id: "top", league: "Dania", competition: "DM Danii" },
+    { id: "division", league: "Dania", competition: "Division 1" },
+    { id: "individual", league: "Dania", competition: "IM Danii" },
+  ];
+  assert.deepEqual(
+    core.filterRecords(records, { leagueFamily: "denmark" }).map((record) => record.id),
+    ["top"]
+  );
+});
+
+test("track history returns one-track records and metrics", () => {
+  const records = [
+    ...Array.from({ length: 10 }, (_, order) => ({
+      id: `a-${order}`, season: "2026", order, track: "Tor A", points: "8", heats: "2,2,2,2",
+    })),
+    ...Array.from({ length: 5 }, (_, order) => ({
+      id: `b-${order}`, season: "2026", order: order + 20, track: "Tor B", points: "6", heats: "3,3",
+    })),
+  ];
+  const history = core.trackHistory(records, "Tor A");
+  assert.equal(history.records.length, 10);
+  assert.equal(history.metric.starts, 10);
+  assert.equal(history.metric.heats, 40);
+  assert.equal(history.last5.length, 5);
+});
+
+test("form series selects newest results and renders them chronologically", () => {
+  const records = Array.from({ length: 20 }, (_, order) => ({
+    id: `result-${order + 1}`,
+    eventKey: `event-${order + 1}`,
+    season: "2026",
+    order,
+    eventDate: `2026-01-${String(order + 1).padStart(2, "0")}`,
+    track: order % 2 ? "Tor B" : "Tor A",
+    points: String(order + 1),
+    heats: "3,2,1",
+  }));
+  assert.deepEqual(core.formSeries(records, 5).map((item) => item.eventKey), [
+    "event-16", "event-17", "event-18", "event-19", "event-20",
+  ]);
+  assert.equal(core.formSeries(records, 10).length, 10);
+  assert.equal(core.formSeries(core.filterRecords(records, { track: "Tor A" }), "all").length, 10);
+  assert.equal(core.formSeries(records, 5, "heat").at(-1).heatAverage, 20 / 3);
+});
+
 test("conflicting fragment dates are diagnostic and never selected arbitrarily", () => {
   const base = { season: "2026", league: "Szwecja", track: "Hallstavik", competition: "Division 1", round: "13 runda" };
   const [event] = core.mergeAdjacentEvents([
