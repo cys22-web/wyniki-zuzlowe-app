@@ -694,42 +694,45 @@
       ) end += 1;
 
       const run = source.slice(index, end);
-      const teams = [];
-      const seenTeams = new Set();
-      for (const event of run) {
-        const candidates = Array.isArray(event.teams) && event.teams.length
-          ? event.teams
-          : [standingTeam(event)].filter(Boolean);
-        for (const team of candidates) {
-          const key = normalize(team.name);
-          if (!key || seenTeams.has(key)) continue;
-          seenTeams.add(key);
-          teams.push({ name: String(team.name), score: String(team.score || "") });
-        }
-      }
-
-      if (strong && run.length > 1 && teams.length > 1) {
-        // Preserve the established merge for multi-team standings, including
-        // legacy seasons that do not have event dates yet.
-        appendMerged(run, teams, true);
-      } else {
+      let groupIndex = 0;
+      while (groupIndex < run.length) {
         /*
+         * Capacity is an exact, hard boundary for every merge path. A blank
+         * value is compatible only with another blank value.
+         */
+        const capacity = String(run[groupIndex]?.capacity || "").trim();
+        let groupEnd = groupIndex + 1;
+        while (
+          groupEnd < run.length &&
+          String(run[groupEnd]?.capacity || "").trim() === capacity
+        ) groupEnd += 1;
+
+        const capacityGroup = run.slice(groupIndex, groupEnd);
+        const teams = [];
+        const seenTeams = new Set();
+        for (const event of capacityGroup) {
+          const candidates = Array.isArray(event.teams) && event.teams.length
+            ? event.teams
+            : [standingTeam(event)].filter(Boolean);
+          for (const team of candidates) {
+            const key = normalize(team.name);
+            if (!key || seenTeams.has(key)) continue;
+            seenTeams.add(key);
+            teams.push({ name: String(team.name), score: String(team.score || "") });
+          }
+        }
+
+        if (strong && capacityGroup.length > 1 && teams.length > 1) {
+          // Preserve the established merge for multi-team standings,
+          // including legacy seasons, inside one capacity only.
+          appendMerged(capacityGroup, teams, true);
+        } else {
+          /*
          * G:I is overloaded in PL2. Team matches store home/away/score there,
          * while individual meetings can store rider-specific final or
          * semi-final placing. Preserve those physical keys, then join only a
-         * row-contiguous, fully dated, non-team occurrence. Capacity remains
-         * a hard category boundary (for example 125 ccm versus 250 ccm).
+         * row-contiguous, fully dated, non-team occurrence.
          */
-        let groupIndex = 0;
-        while (groupIndex < run.length) {
-          const capacity = normalize(run[groupIndex]?.capacity);
-          let groupEnd = groupIndex + 1;
-          while (
-            groupEnd < run.length &&
-            normalize(run[groupEnd]?.capacity) === capacity
-          ) groupEnd += 1;
-
-          const capacityGroup = run.slice(groupIndex, groupEnd);
           const eventDate = String(capacityGroup[0]?.eventDate || "").trim();
           const sameDate = Boolean(eventDate) && capacityGroup.every(
             (event) => String(event?.eventDate || "").trim() === eventDate
@@ -745,8 +748,8 @@
           } else {
             appendSeparate(capacityGroup);
           }
-          groupIndex = groupEnd;
         }
+        groupIndex = groupEnd;
       }
       index = end;
     }

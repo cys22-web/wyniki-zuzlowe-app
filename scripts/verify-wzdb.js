@@ -113,10 +113,14 @@ assert.ok(classifiedTeamEvents / teamEvents > 0.9, "Too few team events have an 
 let logicalEventCount = 0;
 let logicalMultiTeamEvents = 0;
 let logicalFragmentedIndividualEvents = 0;
+const fragmentedIndividualEvents2026 = [];
 const mergedEventExamples = [];
 let hallstavikDivisionOne = null;
+let hallstavikDivisionOneCount = 0;
+let hallstavikCapacities = [];
 let alburyRounds = [];
 let eventDateStats2026 = null;
+const capacityBoundaryGroups2026 = [];
 for (const [season, refs] of Object.entries(database.events || {})) {
   const rows = database.years[season];
   const physical = refs.map(([start, count, fragmentCount, teams, eventDateIndex]) => {
@@ -150,6 +154,16 @@ for (const [season, refs] of Object.entries(database.events || {})) {
       }
     } else if (event.fragmentCount > 1 && event.eventDate) {
       logicalFragmentedIndividualEvents += 1;
+      if (season === "2026") {
+        fragmentedIndividualEvents2026.push({
+          date: event.eventDate,
+          track: event.track,
+          competition: event.competition,
+          round: event.round,
+          participants: event.count,
+          fragments: event.fragmentCount,
+        });
+      }
     }
   }
   if (season === "2026") {
@@ -187,18 +201,66 @@ for (const [season, refs] of Object.entries(database.events || {})) {
       ambiguous_records: ambiguousRecords,
       unmatched_records: unmatchedRecords,
     };
-    hallstavikDivisionOne = logical.find((event) =>
+    const hallstavikEvents = logical.filter((event) =>
       event.league === "Szwecja" &&
       event.track === "Hallstavik" &&
       event.competition === "Division 1" &&
       event.round === "13 runda"
-    ) || hallstavikDivisionOne;
+    );
+    hallstavikDivisionOneCount = hallstavikEvents.length;
+    hallstavikDivisionOne = hallstavikEvents[0] || hallstavikDivisionOne;
+    hallstavikCapacities = [...new Set(physical.filter((event) =>
+      event.league === "Szwecja" &&
+      event.track === "Hallstavik" &&
+      event.competition === "Division 1" &&
+      event.round === "13 runda"
+    ).map((event) => String(event.capacity || "").trim()))];
     alburyRounds = logical.filter((event) =>
       event.league === "Australia" &&
       event.track === "Albury-Wodonga" &&
       event.competition === "IM Australii" &&
       ["1 runda", "2 runda"].includes(event.round)
     );
+
+    const broadIdentity = (event) => [
+      event.season, event.league, event.track, event.competition, event.round,
+    ].map((value) => String(value || "").trim()).join("\u0000");
+    for (let physicalIndex = 0; physicalIndex < physical.length;) {
+      const first = physical[physicalIndex];
+      const identity = broadIdentity(first);
+      let physicalEnd = physicalIndex + 1;
+      while (
+        physicalEnd < physical.length &&
+        broadIdentity(physical[physicalEnd]) === identity &&
+        physical[physicalEnd - 1].start + physical[physicalEnd - 1].count === physical[physicalEnd].start
+      ) physicalEnd += 1;
+
+      const run = physical.slice(physicalIndex, physicalEnd);
+      const capacities = [...new Set(run.map((event) => String(event.capacity || "").trim()))];
+      if (capacities.length > 1) {
+        const runStart = run[0].start;
+        const runEnd = run.at(-1).start + run.at(-1).count;
+        const logicalEvents = logical.filter((event) =>
+          event.start < runEnd && event.start + event.count > runStart
+        );
+        for (const event of logicalEvents) {
+          const eventCapacities = [...new Set(run.filter((fragment) =>
+            fragment.start >= event.start && fragment.start < event.start + event.count
+          ).map((fragment) => String(fragment.capacity || "").trim()))];
+          assert.ok(eventCapacities.length <= 1, "Logical event crosses a capacity boundary");
+        }
+        capacityBoundaryGroups2026.push({
+          date: first.eventDate,
+          track: first.track,
+          competition: first.competition,
+          round: first.round,
+          capacities: capacities.map((value) => value || "(blank)"),
+          physicalEvents: run.length,
+          logicalEvents: logicalEvents.length,
+        });
+      }
+      physicalIndex = physicalEnd;
+    }
   }
 }
 for (const field of Object.keys(eventDateStats2026)) {
@@ -222,12 +284,15 @@ if (version.date_map_sha256 !== null) {
 }
 assert.ok(hallstavikDivisionOne, "Hallstavik Division 1 round 13 is missing");
 assert.ok(logicalMultiTeamEvents > 100, "Too few multi-team fragment groups were recognized across WZDB");
-assert.ok(logicalFragmentedIndividualEvents > 0, "No dated individual fragment groups were recognized across WZDB");
+assert.equal(logicalFragmentedIndividualEvents, 13, "The 13 dated individual fragment groups regressed");
+assert.equal(capacityBoundaryGroups2026.length, 10, "Unexpected number of mixed-capacity groups in 2026");
+assert.equal(hallstavikDivisionOneCount, 1, "Hallstavik Division 1 should be one logical event");
 assert.equal(hallstavikDivisionOne.count, 13, "Hallstavik event does not contain all 13 riders");
 assert.equal(hallstavikDivisionOne.fragmentCount, 4, "Hallstavik event did not merge four fragments");
 assert.deepEqual(hallstavikDivisionOne.teams.map((team) => team.name), [
   "Team Campus Roslagen", "Smederna B", "Gnistorna Malmoe", "Piraterna B",
 ]);
+assert.deepEqual(hallstavikCapacities, [""], "Hallstavik fragments should have compatible blank capacity");
 assert.equal(alburyRounds.length, 2, "Albury IM Australii should have one logical event per round");
 assert.deepEqual(alburyRounds.map((event) => ({
   round: event.round,
@@ -273,11 +338,14 @@ console.log(JSON.stringify({
   logicalEvents: logicalEventCount,
   logicalMultiTeamEvents,
   logicalFragmentedIndividualEvents,
+  fragmentedIndividualEvents2026,
+  capacityBoundaryGroups2026,
   mergedEventExamples,
   hallstavikDivisionOne: {
     participants: hallstavikDivisionOne.count,
     fragments: hallstavikDivisionOne.fragmentCount,
     teams: hallstavikDivisionOne.teams,
+    capacities: hallstavikCapacities.map((value) => value || "(blank)"),
   },
   alburyRounds: alburyRounds.map((event) => ({
     round: event.round,

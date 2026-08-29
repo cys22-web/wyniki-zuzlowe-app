@@ -187,6 +187,47 @@ test("event key is deterministic, canonical and distinguishes identical occurren
   );
 });
 
+function twoTeamCapacityFragments(leftCapacity, rightCapacity) {
+  const base = {
+    season: "2026",
+    league: "Test league",
+    track: "Test track",
+    competition: "Team competition",
+    round: "1 runda",
+    eventDate: "2026-05-01",
+  };
+  return [
+    { ...base, start: 0, count: 4, home: "Team A", away: "", score: "30", capacity: leftCapacity },
+    { ...base, start: 4, count: 4, home: "Team B", away: "", score: "20", capacity: rightCapacity },
+  ];
+}
+
+test("multi-team fragments with different nonblank capacity stay separate", () => {
+  assert.equal(core.mergeAdjacentEvents(
+    twoTeamCapacityFragments("125 ccm", "250 ccm")
+  ).length, 2);
+});
+
+test("multi-team fragments with identical nonblank capacity still merge", () => {
+  const logical = core.mergeAdjacentEvents(twoTeamCapacityFragments("500R", "500R"));
+  assert.equal(logical.length, 1);
+  assert.equal(logical[0].multiTeam, true);
+  assert.equal(logical[0].teams.length, 2);
+});
+
+test("multi-team fragments with both capacities blank still merge", () => {
+  const logical = core.mergeAdjacentEvents(twoTeamCapacityFragments("", ""));
+  assert.equal(logical.length, 1);
+  assert.equal(logical[0].multiTeam, true);
+  assert.equal(logical[0].teams.length, 2);
+});
+
+test("multi-team fragments with blank and nonblank capacity stay separate", () => {
+  assert.equal(core.mergeAdjacentEvents(
+    twoTeamCapacityFragments("", "500R")
+  ).length, 2);
+});
+
 test("adjacent multi-team fragments become one logical event", () => {
   const base = { season: "2026", league: "Szwecja", track: "Hallstavik", competition: "Division 1", round: "13 runda" };
   const merged = core.mergeAdjacentEvents([
