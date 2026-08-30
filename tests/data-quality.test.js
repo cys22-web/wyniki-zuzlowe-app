@@ -49,6 +49,22 @@ test("old Albury layout is a HIGH split candidate", () => {
   assert.equal(result[0].confidence, "HIGH");
   assert.equal(result[0].logicalEvents, 4);
   assert.equal(result[0].participantsTotal, 17);
+  assert.equal(result[0].rowContiguous, true);
+  assert.equal(result[0].teamShaped, false);
+});
+
+test("team-shaped or non-contiguous split candidates stay REVIEW", () => {
+  const events = Array.from({ length: 4 }, (_, index) => event(`team-fragment-${index}`, {
+    away: `Team ${index + 1}`,
+    score: String(40 - index),
+    participants: [rider(index * 2 + 1), rider(index * 2 + 2)],
+    rowStart: 4 + index * 3,
+    rowEnd: 5 + index * 3,
+  }));
+  const [result] = quality.findSplitCandidates(events);
+  assert.equal(result.confidence, "REVIEW");
+  assert.equal(result.rowContiguous, false);
+  assert.equal(result.teamShaped, true);
 });
 
 test("fixed Albury logical event is not a split candidate", () => {
@@ -81,6 +97,29 @@ test("correct Hallstavik multi-team event is not a split candidate", () => {
     participants: Array.from({ length: 13 }, (_, index) => rider(index + 1)),
   });
   assert.deepEqual(quality.findSplitCandidates([hallstavik]), []);
+});
+
+test("participant count statistics alone stay REVIEW", () => {
+  const events = Array.from({ length: 10 }, (_, index) => event(`typical-${index}`, {
+    eventDate: `2026-02-${String(index + 1).padStart(2, "0")}`,
+    participants: Array.from({ length: 12 }, (__, riderIndex) => rider(index * 20 + riderIndex + 1)),
+  }));
+  events.push(event("small-group", {
+    eventDate: "2026-03-01",
+    participants: [rider(501), rider(502), rider(503), rider(504)],
+  }));
+  const report = quality.auditDataQuality({ events, latestSeason: "2026" });
+  const outlier = report.sections.participantOutliers.find((item) => item.eventKey === "small-group");
+  assert.equal(outlier.confidence, "REVIEW");
+});
+
+test("very small events also need evidence beyond participant statistics", () => {
+  const events = Array.from({ length: 5 }, (_, index) => event(`full-${index}`, {
+    participants: Array.from({ length: 12 }, (__, riderIndex) => rider(index * 20 + riderIndex + 1)),
+  }));
+  events.push(event("two-riders", { participants: [rider(501), rider(502)] }));
+  const issue = quality.findSmallEvents(events).find((item) => item.eventKey === "two-riders");
+  assert.equal(issue.confidence, "REVIEW");
 });
 
 test("duplicate logical events require strong participant overlap", () => {
@@ -181,6 +220,16 @@ test("points and heats inconsistency is conservative but visible", () => {
   const result = quality.findPointsHeatIssues([bad]);
   assert.equal(result.length, 1);
   assert.equal(result[0].confidence, "HIGH");
+});
+
+test("unknown heat tokens prevent HIGH confidence", () => {
+  const incomplete = event("incomplete-heats", {
+    participants: [rider(1, { points: "20", heats: "3,3,3,X" })],
+  });
+  const result = quality.findPointsHeatIssues([incomplete]);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].confidence, "REVIEW");
+  assert.equal(result[0].heats.unknown, 1);
 });
 
 test("sorting puts HIGH before REVIEW by default", () => {

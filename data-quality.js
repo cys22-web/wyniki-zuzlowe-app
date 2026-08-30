@@ -130,9 +130,19 @@
       const counts = grouped.map((event) => Number(event.count) || participants(event).length || 0);
       const total = counts.reduce((sum, count) => sum + count, 0);
       const largest = Math.max(...counts);
-      const high = grouped.length >= 3 && total >= 8 && total <= 40 && largest <= Math.max(6, Math.ceil(total * 0.55)) && maximumOverlap < 0.25;
+      const byRow = [...grouped].sort((a, b) => (a.rowStart ?? Number.MAX_SAFE_INTEGER) - (b.rowStart ?? Number.MAX_SAFE_INTEGER));
+      const rowContiguous = byRow.every((event, index) => index === 0 || (
+        Number.isInteger(byRow[index - 1].rowEnd)
+        && Number.isInteger(event.rowStart)
+        && event.rowStart === byRow[index - 1].rowEnd + 1
+      ));
+      const teamShaped = grouped.some((event) => text(event.home) || text(event.away) || text(event.score) || (event.teamKeys || []).length > 0);
+      const high = rowContiguous && !teamShaped && grouped.length >= 3 && total >= 8 && total <= 40
+        && largest <= Math.max(6, Math.ceil(total * 0.55)) && maximumOverlap < 0.25;
       const result = issue("split_candidate", high ? "HIGH" : "REVIEW", first,
-        `${grouped.length} logical events mają tę samą silną tożsamość i kompatybilne capacity.`);
+        high
+          ? `${grouped.length} małych logical events tworzy ciągły blok wierszy bez struktury drużynowej.`
+          : `${grouped.length} logical events ma wspólną tożsamość, ale bez wystarczającego dowodu fizycznego rozbicia.`);
       Object.assign(result, {
         eventKeys: grouped.map((event) => text(event.eventKey || event.key)),
         logicalEvents: grouped.length,
@@ -140,6 +150,8 @@
         participantCounts: counts,
         participantsTotal: total,
         maximumParticipantOverlap: maximumOverlap,
+        rowContiguous,
+        teamShaped,
         rowStart: Math.min(...grouped.map((event) => Number.isInteger(event.rowStart) ? event.rowStart : Number.MAX_SAFE_INTEGER)),
         rowEnd: Math.max(...grouped.map((event) => Number.isInteger(event.rowEnd) ? event.rowEnd : -1)),
       });
@@ -170,8 +182,7 @@
       const key = [text(event.type), normalize(event.competition), normalize(event.league)].join("\u0000");
       const sample = distributions.get(key) || [];
       const typical = median(sample);
-      const high = count <= 2 && sample.length >= 5 && typical >= 8;
-      const result = issue("small_event", high ? "HIGH" : "REVIEW", event,
+      const result = issue("small_event", "REVIEW", event,
         `${count} uczestników; typowa mediana dla tej serii: ${typical ?? "brak próby"}.`);
       result.participants = count;
       result.fragmentCount = Number(event.fragmentCount) || 1;
@@ -197,7 +208,7 @@
       const low = count <= Math.max(4, Math.floor(typical * 0.5)) && typical - count >= 4;
       const high = count >= Math.ceil(typical * 2.5) && count - typical >= 8;
       if (!low && !high) continue;
-      const result = issue("participant_outlier", low && sample.length >= 10 ? "HIGH" : "REVIEW", event,
+      const result = issue("participant_outlier", "REVIEW", event,
         `${count} uczestników przy medianie ${typical} w ${sample.length} podobnych eventach.`);
       result.participants = count;
       result.typicalMedian = typical;
@@ -626,7 +637,7 @@
         if (heats.rides > 9) reasons.push(`nietypowa liczba biegów: ${heats.rides}`);
         if (standardSpeedwayScale && points.pointsReliable && heats.rides > 0 && points.points > heats.rides * 4) {
           reasons.push(`punkty ${points.points} przekraczają 4 × ${heats.rides} biegów`);
-          confidence = "HIGH";
+          if (heats.unknown === 0) confidence = "HIGH";
         } else if (standardSpeedwayScale && points.pointsReliable && heats.rides > 0 && heats.unknown === 0 && Math.abs(points.points - heats.points) > 2) {
           reasons.push(`punkty ${points.points} nie zgadzają się z sumą biegów ${heats.points}`);
         }
