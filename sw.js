@@ -1,4 +1,4 @@
-const CACHE_NAME = "wz-v4-9-2-20260829-dense-form-hit-test";
+const CACHE_NAME = "wz-v5-0-20260830-search-aliases";
 const APP_SHELL = [
   "./",
   "index.html",

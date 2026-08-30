@@ -1,6 +1,6 @@
 {
   "name": "wyniki-zuzlowe-app",
-  "version": "4.9.2",
+  "version": "5.0.0",
   "private": true,
   "scripts": {
     "test": "node --test tests/*.test.js",
