@@ -6,7 +6,7 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-for (const file of ["app-core.js", "db-update.js", "app.js", "sw.js"]) {
+for (const file of ["app-core.js", "data-quality.js", "data-quality-worker.js", "db-update.js", "app.js", "sw.js"]) {
   new vm.Script(read(file), { filename: file });
 }
 
@@ -15,6 +15,7 @@ const style = read("style.css");
 for (const asset of [
   "style.css",
   "app-core.js",
+  "data-quality.js",
   "db-update.js",
   "app.js",
   "manifest.webmanifest",
@@ -41,6 +42,9 @@ assert.match(app, /thresholdTrend/);
 assert.match(app, /history\.pushState/);
 assert.match(app, /window\.addEventListener\('popstate'/);
 assert.match(app, /activateUpdatedDB=async function\(db\)[\s\S]*captureViewContext[\s\S]*applyRoute/);
+assert.match(app, /new Worker\('data-quality-worker\.js'\)/);
+assert.match(app, /WZDataQuality\.auditCacheKey\(hash\)/);
+assert.match(app, /view:'data-quality'/);
 
 for (const id of ["cmpResultsA", "cmpResultsB", "cmpOverall", "cmpForm", "cmpChart", "cmpSeasons", "commonEvents", "eventTeams", "multiTrackPanel", "multiTrackOptions"]) {
   assert.match(html, new RegExp(`id=["']${id}["']`));
@@ -64,6 +68,8 @@ assert.match(serviceWorker, /event\.respondWith\(fetch\(event\.request, \{ cache
 assert.match(serviceWorker, /skipWaiting/);
 assert.match(serviceWorker, /clients\.claim/);
 assert.match(serviceWorker, /app-core\.js/);
+assert.match(serviceWorker, /data-quality\.js/);
+assert.match(serviceWorker, /data-quality-worker\.js/);
 assert.match(serviceWorker, /wz-v5-0-/);
 assert.match(app, /eventDateForRow/);
 assert.match(app, /S\(row\[0\]\)\],key=/);

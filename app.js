@@ -541,4 +541,130 @@ $('formChartToggle').querySelectorAll('[data-form-metric]').forEach(button=>butt
 $('league').addEventListener('change',()=>{if(!activeLeagueFamily)return;activeLeagueFamily='';applyFilters();persistHistoryContext()});$('comp').addEventListener('change',()=>{if(!activeLeagueFamily||!$('comp').value)return;activeLeagueFamily='';applyFilters();persistHistoryContext()});
 $('clearFilters').onclick=clearProfileFiltersV45;$('statsClear').onclick=clearProfileFiltersV45;
 
+// ===== v5.0: lokalny panel jakości danych (audyt tylko na żądanie) =====
+const DATA_QUALITY_CATEGORY_LABELS={
+  split_candidate:'Kandydat do scalenia',small_event:'Podejrzanie małe wydarzenie',participant_outlier:'Nietypowa liczba uczestników',
+  duplicate_event:'Możliwy duplikat wydarzenia',missing_date:'Brak daty',date_conflict:'Konflikt dat',start_number:'Numer startowy',
+  track_alias_high:'Alias toru — HIGH',track_alias_review:'Alias toru — REVIEW',team_alias_high:'Alias drużyny — HIGH',
+  team_alias_review:'Alias drużyny — REVIEW',player_duplicate:'Możliwy duplikat zawodnika',score_mismatch:'Niezgodność wyniku',
+  points_heats:'Punkty / biegi',alias_safety:'Bezpieczeństwo aliasu'
+};
+let dataQualityReport=null,dataQualityHash='',dataQualityFiltered=[],dataQualityShown=80,dataQualityRunning=false,dataQualityInitialized=false;
+
+function currentDataQualityHash(){return String(DB_RECORD?.wzdb_sha256||DB?.wzdb_sha256||DB_RECORD?.source_sha256||DB?.built||'local')}
+function dataQualityNumber(value){return Number(value||0).toLocaleString('pl-PL')}
+function dataQualityCategory(category){return DATA_QUALITY_CATEGORY_LABELS[category]||String(category||'Inne')}
+function setDataQualityStatus(message,state='working'){$('dataQualityStatus').textContent=message;$('dataQualityStatus').dataset.state=state}
+function hideDataQuality(){$('dataQualitySection').classList.add('hidden')}
+function hideEverythingForDataQuality(){
+  hideMainViews();
+  for(const id of ['compareSection','eventsSection','eventDetail','searchPanel','playerNav','playerAnalytics','statsSection','thresholdSection','trackHistorySummary'])$(id)?.classList.add('hidden');
+  $('dataModal').classList.add('hidden');
+}
+
+function dataQualityFilters(){return {season:$('dqSeason').value,confidence:$('dqConfidence').value,category:$('dqCategory').value,league:$('dqLeague').value,track:$('dqTrack').value,sort:$('dqSort').value}}
+function fillDataQualityOptions(){
+  if(!dataQualityReport)return;
+  const issues=dataQualityReport.issues||[],keep={season:$('dqSeason').value,category:$('dqCategory').value,league:$('dqLeague').value,track:$('dqTrack').value};
+  const values=(field)=>[...new Set(issues.map(item=>item[field]).filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'pl',{numeric:true}));
+  const seasons=[...new Set(issues.flatMap(item=>[item.season,...(item.seasons||[])].filter(Boolean)))].sort((a,b)=>Number(b)-Number(a));
+  const setOptions=(id,allLabel,list,label=value=>value)=>{const node=$(id);node.innerHTML=`<option value="">${esc(allLabel)}</option>`+list.map(value=>`<option value="${esc(value)}">${esc(label(value))}</option>`).join('')};
+  setOptions('dqSeason','Wszystkie sezony',seasons);setOptions('dqCategory','Wszystkie typy',values('category'),dataQualityCategory);setOptions('dqLeague','Wszystkie ligi',values('league'));
+  setOptions('dqTrack','Wszystkie canonical tracks',values('canonicalTrack'));
+  if(!dataQualityInitialized){$('dqSeason').value=dataQualityReport.latestSeason||'';dataQualityInitialized=true}
+  else for(const [field,value] of Object.entries(keep)){const node=$(`dq${field[0].toUpperCase()}${field.slice(1)}`);if(node&&[...node.options].some(option=>option.value===value))node.value=(value??'')}
+}
+
+function dataQualitySummaryTiles(summary){
+  const tiles=[
+    ['HIGH',summary.HIGH,'high'],['REVIEW',summary.REVIEW,'review'],['Eventy',summary.suspiciousEvents],['Małe eventy',summary.smallEvents],
+    ['Duplikaty',summary.duplicateEvents],['Brak dat',summary.missingDates],['Konflikty dat',summary.dateConflicts],['Tory REVIEW',summary.trackReview],
+    ['Drużyny REVIEW',summary.teamReview],['Zawodnicy REVIEW',summary.playerDuplicateCandidates]
+  ];
+  $('dataQualitySummary').innerHTML=tiles.map(([label,value,state])=>`<div class="dqTile" data-state="${state||'neutral'}"><span>${esc(label)}</span><strong>${dataQualityNumber(value)}</strong></div>`).join('');
+}
+
+function dataQualityIssueDetails(item){
+  const playerInfo=player=>player?[player.name,player.key,player.birthDate,player.nationality,`${player.count||0} wyników`,(player.seasons||[]).join(', ')].filter(Boolean).join(' • '):'';
+  const fields=[['Data',item.date],['Liga / kraj',item.league],['Tor',item.track],['Canonical track',item.canonicalTrack],['Rozgrywki',item.competition],['Runda',item.round],['Capacity',item.capacity],['Typ eventu',item.eventType],['Fragmenty',item.fragmentCount],['Zawodnik',item.player],['Wartość',item.value],['Typ problemu',item.problemType],['Logical events',item.logicalEvents],['Physical fragments',item.physicalFragments],['Uczestnicy',item.participantsTotal||item.participants||item.count],['Liczebności',item.participantCounts],['Nakład uczestników',item.maximumParticipantOverlap],['EventKey A',item.eventKeyA],['EventKey B',item.eventKeyB],['Uczestnicy A / B',item.category==='duplicate_event'?`${item.countA} / ${item.countB}`:''],['Podobieństwo uczestników',item.participantSimilarity!==undefined?`${(item.participantSimilarity*100).toFixed(1)}%`:''],['Wiersze',item.rowStart===null?'':`${item.rowStart}${item.rowEnd!==null&&item.rowEnd!==item.rowStart?`–${item.rowEnd}`:''}`],['Wariant A',item.variantA?`${item.variantA}${item.countA!==undefined?` • ${item.countA} wystąpień`:''}`:''],['Wariant B',item.variantB?`${item.variantB}${item.countB!==undefined?` • ${item.countB} wystąpień`:''}`:''],['Proponowany canonical',item.proposedCanonical],['Player A',playerInfo(item.playerA)],['Player B',playerInfo(item.playerB)],['Wynik zapisany',item.storedScore],['Wynik obliczony',item.calculatedScore],['Kandydaci daty',item.dateCandidates],['Sezony',item.seasons]];
+  return fields.filter(([,value])=>value!==undefined&&value!==null&&value!==''&&(!Array.isArray(value)||value.length)).map(([label,value])=>`<div><span>${esc(label)}</span><b>${esc(Array.isArray(value)?value.join(' • '):value)}</b></div>`).join('');
+}
+
+function dataQualityIssueCard(item){
+  const keys=[...new Set([item.eventKey,...(item.eventKeys||[])].filter(Boolean))],actions=[];
+  for(const key of keys)actions.push(`<button class="miniBtn" data-dq-event="${esc(key)}">Otwórz event</button>`);
+  for(const key of [...new Set([item.playerKey,item.playerKeyA,item.playerKeyB].filter(Boolean))])actions.push(`<button class="miniBtn" data-dq-player="${esc(key)}">Profil zawodnika</button>`);
+  if(item.track)actions.push(`<button class="miniBtn" data-dq-track="${esc(item.track)}">Eventy na torze</button>`);
+  const title=[item.competition,item.track,item.player,item.value].find(Boolean)||dataQualityCategory(item.category),meta=[item.season,item.date,item.league,item.round].filter(Boolean).join(' • ');
+  return `<details class="dqIssue" data-confidence="${esc(item.confidence)}"><summary><span class="dqConfidence">${esc(item.confidence)}</span><div><small>${esc(dataQualityCategory(item.category))}</small><h3>${esc(title)}</h3><p>${esc(meta||'Zakres ogólny bazy')}</p></div></summary><div class="dqIssueBody"><p>${esc(item.reason||'Wymaga ręcznej weryfikacji.')}</p><div class="dqIssueDetails">${dataQualityIssueDetails(item)}</div>${actions.length?`<div class="dqIssueActions">${actions.join('')}</div>`:''}</div></details>`;
+}
+
+function bindDataQualityIssueActions(){
+  $('dataQualityList').querySelectorAll('[data-dq-event]').forEach(button=>button.onclick=event=>{event.preventDefault();const ref=eventKeyMap.get(button.dataset.dqEvent);if(ref)openEventDetail(ref[0],ref[1],'data-quality');else toast('Nie znaleziono wydarzenia w aktualnej bazie')});
+  $('dataQualityList').querySelectorAll('[data-dq-player]').forEach(button=>button.onclick=event=>{event.preventDefault();const pid=findPidByKey(button.dataset.dqPlayer);if(pid>=0)selectPlayer(pid);else toast('Nie znaleziono zawodnika w aktualnej bazie')});
+  $('dataQualityList').querySelectorAll('[data-dq-track]').forEach(button=>button.onclick=event=>{event.preventDefault();openEventsWithFilters({track:button.dataset.dqTrack})});
+}
+
+function renderDataQuality(){
+  if(!dataQualityReport)return;
+  dataQualityFiltered=WZDataQuality.filterIssues(dataQualityReport.issues,dataQualityFilters());
+  const diagnostics=dataQualityReport.diagnostics||{},season=$('dqSeason').value,seasonStats=season?diagnostics.seasonStats?.[season]:null,summary=WZDataQuality.summaryFor(dataQualityFiltered,diagnostics);
+  $('dataQualityState').innerHTML=seasonStats?`<b>Sezon ${esc(season)}</b><span>${dataQualityNumber(seasonStats.records)} rekordów • ${dataQualityNumber(seasonStats.events)} logical events • ${dataQualityNumber(seasonStats.datedEvents)} z datą</span>`:`<b>Wszystkie sezony</b><span>${dataQualityNumber(diagnostics.recordCount)} rekordów • ${dataQualityNumber(diagnostics.eventCount)} logical events • audyt tylko do odczytu</span>`;
+  dataQualitySummaryTiles(summary);$('dataQualityCount').textContent=`${dataQualityNumber(dataQualityFiltered.length)} problemów`;
+  const visible=dataQualityFiltered.slice(0,dataQualityShown);$('dataQualityShown').textContent=visible.length?`Pokazano ${dataQualityNumber(visible.length)} z ${dataQualityNumber(dataQualityFiltered.length)}`:'';
+  $('dataQualityList').innerHTML=visible.length?visible.map(dataQualityIssueCard).join(''):'<div class="panel empty">Brak problemów dla wybranych filtrów.</div>';
+  $('dataQualityMore').classList.toggle('hidden',visible.length>=dataQualityFiltered.length);$('dataQualityExport').disabled=!dataQualityFiltered.length;bindDataQualityIssueActions();
+}
+
+async function runDataQualityAudit(force=false){
+  if(!DB||dataQualityRunning)return;
+  const hash=currentDataQualityHash();dataQualityRunning=true;$('dataQualityRerun').disabled=true;
+  try{
+    if(!force){
+      const cached=await idbGet(WZDataQuality.auditCacheKey(hash)).catch(()=>null);
+      if(WZDataQuality.isAuditCacheCurrent(cached,hash)){dataQualityReport=cached.report;dataQualityHash=hash;fillDataQualityOptions();renderDataQuality();setDataQualityStatus(`Audyt z pamięci podręcznej • ${new Date(dataQualityReport.generatedAt).toLocaleString('pl-PL')}`,'ready');return}
+    }
+    setDataQualityStatus('Przygotowuję audyt aktualnego WZDB…');
+    let report;
+    if(typeof Worker!=='undefined')report=await new Promise((resolve,reject)=>{const worker=new Worker('data-quality-worker.js');worker.onmessage=event=>{const message=event.data||{};if(message.type==='progress')setDataQualityStatus(message.message);else if(message.type==='done'){worker.terminate();resolve(message.report)}else if(message.type==='error'){worker.terminate();reject(new Error(message.message))}};worker.onerror=error=>{worker.terminate();reject(new Error(error.message||'Błąd workera audytu'))};worker.postMessage({database:DB,hash})});
+    else{await new Promise(resolve=>setTimeout(resolve));const started=performance.now(),buildStarted=performance.now(),input=WZDataQuality.buildAuditInput(DB,{hash}),buildMs=performance.now()-buildStarted;setDataQualityStatus('Analizuję jakość danych…');await new Promise(resolve=>setTimeout(resolve));report=WZDataQuality.auditDataQuality(input,{hash});report.buildMs=buildMs;report.totalMs=performance.now()-started}
+    dataQualityReport=report;dataQualityHash=hash;dataQualityInitialized=false;fillDataQualityOptions();renderDataQuality();
+    await idbPut(WZDataQuality.auditCacheKey(hash),{hash,report}).catch(()=>{});
+    setDataQualityStatus(`Audyt gotowy • ${dataQualityNumber(report.issues.length)} problemów • ${Math.round(report.totalMs||report.durationMs)} ms`,'ready');
+  }catch(error){setDataQualityStatus(`Audyt nie powiódł się: ${error.message||String(error)}`,'error')}
+  finally{dataQualityRunning=false;$('dataQualityRerun').disabled=false}
+}
+
+async function openDataQuality({force=false,historyUpdate=true}={}){
+  if(historyUpdate&&!routeApplying)persistHistoryContext();hideEverythingForDataQuality();$('dataQualitySection').classList.remove('hidden');scrollTo({top:0,behavior:'auto'});
+  if(historyUpdate&&!routeApplying)pushCurrentRoute();
+  const hash=currentDataQualityHash();if(dataQualityHash!==hash){dataQualityReport=null;dataQualityHash='';dataQualityInitialized=false}
+  if(dataQualityReport&&!force){fillDataQualityOptions();renderDataQuality()}else await runDataQualityAudit(force);
+}
+
+function exportDataQualityCSV(){
+  if(!dataQualityFiltered.length)return;const csv=WZDataQuality.issuesToCSV(dataQualityFiltered),blob=new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`wz-data-quality-${$('dqSeason').value||'all'}.csv`;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),0)
+}
+
+const _hideMainViewsDataQuality=hideMainViews;hideMainViews=function(){hideDataQuality();return _hideMainViewsDataQuality()};
+const _goHomeDataQuality=goHome;goHome=function(){hideDataQuality();return _goHomeDataQuality()};
+const _selectPlayerDataQuality=selectPlayer;selectPlayer=function(pid){hideDataQuality();return _selectPlayerDataQuality(pid)};
+const _openEventsDataQuality=openEvents;openEvents=function(){hideDataQuality();return _openEventsDataQuality()};
+const _openCompareDataQuality=openCompare;openCompare=function(prefillPid=null){hideDataQuality();return _openCompareDataQuality(prefillPid)};
+
+const _currentRouteDataQuality=currentRoute;currentRoute=function(){return !$('dataQualitySection').classList.contains('hidden')?{view:'data-quality'}:_currentRouteDataQuality()};
+const _captureViewContextDataQuality=captureViewContext;captureViewContext=function(){const context=_captureViewContextDataQuality();if(context.route.view==='data-quality')Object.assign(context,{controls:controlValues(['dqSeason','dqConfidence','dqCategory','dqLeague','dqTrack','dqSort']),dataQualityShown});return context};
+const _applyRouteDataQuality=applyRoute;applyRoute=async function(route,context=null){const next=CORE.normalizeRoute(route);if(next.view!=='data-quality')return await _applyRouteDataQuality(route,context);routeApplying=true;try{await openDataQuality({historyUpdate:false});if(context?.controls){setControlValues(context.controls);dataQualityShown=Math.max(80,Number(context.dataQualityShown)||80);renderDataQuality()}}finally{routeApplying=false}if(context)await restoreScroll(context.scrollY)};
+
+const _activateDBDataQuality=activateDB;activateDB=async function(db){dataQualityReport=null;dataQualityHash='';dataQualityInitialized=false;hideDataQuality();return await _activateDBDataQuality(db)};
+
+$('dataQualityBtn').onclick=()=>void openDataQuality();
+$('dataQualityBack').onclick=()=>{if(history.length>1)history.back();else void applyRoute({view:'home'})};
+$('dataQualityRerun').onclick=()=>void runDataQualityAudit(true);$('dataQualityExport').onclick=exportDataQualityCSV;
+for(const id of ['dqSeason','dqConfidence','dqCategory','dqLeague','dqTrack','dqSort'])$(id).onchange=()=>{dataQualityShown=80;renderDataQuality();persistHistoryContext()};
+$('dqAllSeasons').onclick=()=>{$('dqSeason').value='';dataQualityShown=80;renderDataQuality();persistHistoryContext()};
+$('dqClear').onclick=()=>{setControlValues({dqConfidence:'all',dqCategory:'',dqLeague:'',dqTrack:'',dqSort:'confidence'});dataQualityShown=80;renderDataQuality();persistHistoryContext()};
+$('dataQualityMore').onclick=()=>{dataQualityShown+=80;renderDataQuality();persistHistoryContext()};
+window.getDataQualityDiagnostics=()=>({hash:dataQualityHash,running:dataQualityRunning,report:dataQualityReport,filtered:dataQualityFiltered.length,shown:Math.min(dataQualityShown,dataQualityFiltered.length)});
+
 startup();

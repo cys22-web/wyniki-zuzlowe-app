@@ -1199,6 +1199,7 @@
       if (["oldest", "track", "competition"].includes(route.eventSort)) eventsRoute.eventSort = route.eventSort;
       return eventsRoute;
     }
+    if (route?.view === "data-quality") return { view: "data-quality" };
     return { view: "home" };
   }
 
@@ -1235,6 +1236,7 @@
       lastN: url.searchParams.get("last"),
       pointsMode: url.searchParams.get("points"),
     });
+    if (url.searchParams.get("view") === "data-quality") return { view: "data-quality" };
     return { view: "home" };
   }
 
@@ -1273,6 +1275,8 @@
       for (const name of ["eventSeason", "eventType", "eventLeague", "eventTrack", "eventCompetition", "eventSearch", "eventTeam", "eventTime", "eventSort"]) {
         if (normalized[name]) url.searchParams.set(name, normalized[name]);
       }
+    } else if (normalized.view === "data-quality") {
+      url.searchParams.set("view", "data-quality");
     }
     url.hash = "";
     return url.toString();

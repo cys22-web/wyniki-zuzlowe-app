@@ -904,6 +904,15 @@ test("advanced track selection round-trips through a player URL", () => {
   assert.equal(route.track, undefined);
 });
 
+test("data-quality panel has a stable refreshable route", () => {
+  const route = core.normalizeRoute({ view: "data-quality", ignored: "value" });
+  assert.deepEqual(route, { view: "data-quality" });
+  const url = core.urlForRoute("https://wyniki-zuzlowe.vercel.app/?player=test", route);
+  assert.match(url, /view=data-quality/);
+  assert.doesNotMatch(url, /player=/);
+  assert.deepEqual(core.routeFromUrl(url), route);
+});
+
 const discoveryEvents = [
   { key: "a", season: "2026", order: 1, eventDate: "2026-08-01", league: "Szwecja", track: "Malilla", competition: "IM", type: "individual", searchText: "Szwecja Malilla IM" },
   { key: "b", season: "2026", order: 2, eventDate: "2026-08-10", league: "Polska", track: "Gorzów", competition: "Ekstraliga", type: "team", searchText: "Polska Gorzów Ekstraliga Stal Motor", teamKeys: ["Stal Gorzów", "Motor Lublin"] },

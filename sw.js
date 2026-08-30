@@ -4,6 +4,8 @@ const APP_SHELL = [
   "index.html",
   "style.css",
   "app-core.js",
+  "data-quality.js",
+  "data-quality-worker.js",
   "db-update.js",
   "app.js",
   "manifest.webmanifest",
@@ -75,6 +77,8 @@ self.addEventListener("fetch", (event) => {
     url.origin === self.location.origin &&
     (url.pathname.endsWith("app.js") ||
       url.pathname.endsWith("app-core.js") ||
+      url.pathname.endsWith("data-quality.js") ||
+      url.pathname.endsWith("data-quality-worker.js") ||
       url.pathname.endsWith("db-update.js") ||
       url.pathname.endsWith("style.css") ||
       url.pathname.endsWith("manifest.webmanifest"))
