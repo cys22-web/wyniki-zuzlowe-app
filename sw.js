@@ -1,4 +1,4 @@
-const CACHE_NAME = "wz-v5-0-20260830-search-aliases";
+const CACHE_NAME = "wz-v5-1-20260830-data-quality";
 const APP_SHELL = [
   "./",
   "index.html",
