@@ -675,4 +675,30 @@ $('dqClear').onclick=()=>{setControlValues({dqConfidence:'all',dqCategory:'',dqL
 $('dataQualityMore').onclick=()=>{dataQualityShown+=80;renderDataQuality();persistHistoryContext()};
 window.getDataQualityDiagnostics=()=>({hash:dataQualityHash,scope:dataQualityScope,cacheKey:WZDataQuality.auditCacheKey(dataQualityHash,dataQualityScope||''),running:dataQualityRunning,report:dataQualityReport,filtered:dataQualityFiltered.length,shown:Math.min(dataQualityShown,dataQualityFiltered.length)});
 
+// ===== light dashboard: presentation-only synchronization =====
+function syncProfilePresentation(){
+  const copy=(source,target)=>{if($(source)&&$(target))$(target).textContent=$(source).textContent};
+  copy('statCount','profileStatStarts');copy('statAvg','profileStatAvg');copy('statHeatAvg','profileStatHeatAvg');copy('statBest','profileStatBest');
+  const chips=[];
+  const add=(label,value)=>{if(value)chips.push(`${label}: ${value}`)};
+  add('Sezon',$('season')?.value);add('Liga',$('league')?.value);add('Rozgrywki',$('comp')?.value);add('Tor',$('track')?.value);
+  if(activeLeagueFamily)add('Liga',CORE.leagueQuickFilters(metricRecords(currentAll)).find(item=>item.id===activeLeagueFamily)?.label||activeLeagueFamily);
+  if(advancedTrackSelection.size)add(advancedTrackMode==='exclude'?'Bez torów':'Tory',advancedTrackSelection.size.toLocaleString('pl-PL'));
+  if($('thresholdPlace')?.value)add('Miejsce',$('thresholdPlace').value==='HOME'?'Dom':'Wyjazd');
+  if(+$('thresholdLast')?.value)add('Zakres',`ostatnie ${$('thresholdLast').value}`);
+  if($('within')?.value.trim())add('Szukaj',`„${$('within').value.trim()}”`);
+  $('activeFilterCount').textContent=String(chips.length);$('activeFilterCount').classList.toggle('isEmpty',!chips.length);
+  $('activeFilterChips').innerHTML=chips.map(chip=>`<span>${esc(chip)}</span>`).join('');
+}
+
+const _applyFiltersLightDashboard=applyFilters;
+applyFilters=function(){const result=_applyFiltersLightDashboard();syncProfilePresentation();return result};
+
+$('profileFilterToggle').onclick=()=>{const panel=$('filtersPanel'),expanded=panel.classList.toggle('mobileExpanded');panel.classList.toggle('mobileCollapsed',!expanded);$('profileFilterToggle').setAttribute('aria-expanded',String(expanded))};
+$('homeFavorites').onclick=()=>$('favoritesHeading').scrollIntoView({behavior:'smooth',block:'start'});
+$('homeQuality').onclick=()=>$('dataQualityBtn').click();
+$('mobileHome').onclick=()=>$('brand').click();$('mobileEvents').onclick=()=>$('eventsBtn').click();$('mobileCompare').onclick=()=>$('compareBtn').click();$('mobileMore').onclick=()=>$('dataBtn').click();
+$('brand').addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();$('brand').click()}});
+for(const id of ['season','league','comp','track','within','thresholdPlace','thresholdLast'])$(id)?.addEventListener(id==='within'?'input':'change',()=>queueMicrotask(syncProfilePresentation));
+
 startup();
