@@ -38,6 +38,22 @@ function event(key, overrides = {}) {
   };
 }
 
+function scopedDatabase() {
+  const strings = [""];
+  const intern = (value) => { strings.push(value); return strings.length - 1; };
+  const points = intern("3"), heats = intern("3"), league = intern("Test League"), competition = intern("Test Cup"), round = intern("Finał");
+  const track2025 = intern("Heusden Zolder"), track2026 = intern("Heusden-Zolder"), startNumber = intern("5");
+  const players = Array.from({ length: 12 }, (_, index) => [`Rider ${index + 1}`, 0, "", `rider ${index + 1}`]);
+  const rows = (track, count) => Array.from({ length: count }, (_, index) => [index, points, heats, 0, 0, 0, 0, 0, league, track, competition, round, 0, 0, startNumber]);
+  return {
+    strings,
+    players,
+    years: { "2025": rows(track2025, 12), "2026": rows(track2026, 4) },
+    events: { "2025": [[0, 12, 1, [], "2025-06-01"]], "2026": [[0, 4, 1, [], "2026-06-01"]] },
+    eventDateDiagnostics: [{ season: "2025", type: "missing" }, { season: "2026", type: "missing" }],
+  };
+}
+
 test("old Albury layout is a HIGH split candidate", () => {
   const events = Array.from({ length: 4 }, (_, index) => event(`albury-${index}`, {
     participants: Array.from({ length: index === 3 ? 5 : 4 }, (__, riderIndex) => rider(index * 4 + riderIndex + 1)),
@@ -251,9 +267,43 @@ test("CSV generation escapes technical fields", () => {
   assert.match(csv, /"To samo, ale ""podzielone"""/);
 });
 
+test("season audit builds a genuinely scoped model instead of filtering a full report", () => {
+  const database = scopedDatabase();
+  const scoped = quality.auditDataQuality(quality.buildAuditInput(database, { seasons: ["2026"] }));
+  const full = quality.auditDataQuality(quality.buildAuditInput(database));
+  assert.equal(scoped.issues.some((item) => item.category.startsWith("track_alias_")), false);
+  assert.equal(quality.filterIssues(full.issues, { season: "2026" }).some((item) => item.category.startsWith("track_alias_")), true);
+});
+
+test("season audit scopes participant distributions, players and date diagnostics", () => {
+  const model = quality.buildAuditInput(scopedDatabase(), { seasons: ["2026"] });
+  assert.equal(model.events.length, 1);
+  assert.equal(model.events[0].count, 4);
+  assert.equal(model.players.length, 4);
+  assert.deepEqual(model.dateDiagnostics.map((item) => item.season), ["2026"]);
+});
+
+test("all-season audit still includes the complete database", () => {
+  const model = quality.buildAuditInput(scopedDatabase());
+  assert.equal(model.events.length, 2);
+  assert.equal(model.events.reduce((sum, item) => sum + item.count, 0), 16);
+  assert.deepEqual(model.trackEntries.flatMap((item) => item.seasons).sort(), ["2025", "2026"]);
+});
+
+test("latest season is calculated inside the selected audit scope", () => {
+  const model = quality.buildAuditInput(scopedDatabase(), { seasons: ["2025"] });
+  assert.equal(model.latestSeason, "2025");
+  assert.deepEqual(model.events.map((item) => item.season), ["2025"]);
+});
+
 test("audit cache key and hash invalidate old reports", () => {
-  const entry = { hash: "new", report: { summary: {} } };
+  const entry = { hash: "new", season: "", report: { summary: {} } };
+  const seasonEntry = { hash: "new", season: "2026", report: { summary: {} } };
   assert.equal(quality.auditCacheKey("abc"), "wz2:data-quality:abc");
+  assert.equal(quality.auditCacheKey("abc", "2026"), "wz2:data-quality:abc:season:2026");
   assert.equal(quality.isAuditCacheCurrent(entry, "new"), true);
   assert.equal(quality.isAuditCacheCurrent(entry, "old"), false);
+  assert.equal(quality.isAuditCacheCurrent(seasonEntry, "new", "2026"), true);
+  assert.equal(quality.isAuditCacheCurrent(seasonEntry, "new"), false);
+  assert.equal(quality.isAuditCacheCurrent(entry, "new", "2026"), false);
 });

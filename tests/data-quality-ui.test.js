@@ -17,19 +17,35 @@ test("data-quality audit is an explicit action and not part of ordinary startup"
   assert.doesNotMatch(startupBody, /runDataQualityAudit|buildAuditInput|auditDataQuality/);
 });
 
-test("full audit runs off the UI thread and reports progress", () => {
+test("scoped audit runs off the UI thread and reports progress", () => {
   assert.match(app, /new Worker\('data-quality-worker\.js'\)/);
-  assert.match(worker, /buildAuditInput\(database/);
+  assert.match(worker, /const \{ database, hash, seasons \}/);
+  assert.match(worker, /buildAuditInput\(database, \{ hash, seasons \}\)/);
   assert.match(worker, /auditDataQuality\(input/);
   assert.match(worker, /type: "progress"/);
   assert.match(worker, /type: "done"/);
 });
 
-test("audit cache is tied to the current WZDB hash", () => {
+test("audit cache is tied to the current WZDB hash and season scope", () => {
   assert.match(app, /currentDataQualityHash\(\)/);
-  assert.match(app, /auditCacheKey\(hash\)/);
-  assert.match(app, /isAuditCacheCurrent\(cached,hash\)/);
+  assert.match(app, /auditCacheKey\(hash,scope\)/);
+  assert.match(app, /isAuditCacheCurrent\(cached,hash,scope\)/);
   assert.match(app, /dataQualityHash!==hash/);
+});
+
+test("season choices come from DB years and trigger a new scoped audit", () => {
+  assert.match(app, /Object\.keys\(DB\?\.years\|\|\{\}\)/);
+  assert.match(app, /\$\('dqSeason'\)\.onchange=.*runDataQualityAudit\(false,\$\('dqSeason'\)\.value\)/);
+  assert.match(app, /\$\('dqAllSeasons'\)\.onclick=.*runDataQualityAudit\(false,''\)/);
+  assert.match(app, /worker\.postMessage\(\{database:DB,hash,seasons\}\)/);
+});
+
+test("data-quality actions preserve panel history before navigating", () => {
+  assert.match(app, /function navigateFromDataQuality\(action\)\{\s*persistHistoryContext\(\)/);
+  assert.match(app, /navigateFromDataQuality\(\(\)=>openEventDetail/);
+  assert.match(app, /navigateFromDataQuality\(\(\)=>selectPlayer/);
+  assert.match(app, /navigateFromDataQuality\(\(\)=>openEventsWithFilters/);
+  assert.match(app, /pushCurrentRoute\(\)/);
 });
 
 test("panel exposes required filters, expandable issues and CSV export", () => {

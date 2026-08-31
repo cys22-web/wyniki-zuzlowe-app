@@ -43,7 +43,8 @@ assert.match(app, /history\.pushState/);
 assert.match(app, /window\.addEventListener\('popstate'/);
 assert.match(app, /activateUpdatedDB=async function\(db\)[\s\S]*captureViewContext[\s\S]*applyRoute/);
 assert.match(app, /new Worker\('data-quality-worker\.js'\)/);
-assert.match(app, /WZDataQuality\.auditCacheKey\(hash\)/);
+assert.match(app, /WZDataQuality\.auditCacheKey\(hash,scope\)/);
+assert.match(app, /worker\.postMessage\(\{database:DB,hash,seasons\}\)/);
 assert.match(app, /view:'data-quality'/);
 
 for (const id of ["cmpResultsA", "cmpResultsB", "cmpOverall", "cmpForm", "cmpChart", "cmpSeasons", "commonEvents", "eventTeams", "multiTrackPanel", "multiTrackOptions"]) {

@@ -469,7 +469,8 @@
       item.seasons.add(String(season));
     };
     const selectedSeasons = options.seasons ? new Set(options.seasons.map(String)) : null;
-    for (const season of Object.keys(database?.years || {}).sort((a, b) => +b - +a)) {
+    const includedSeasons = Object.keys(database?.years || {}).filter((season) => !selectedSeasons || selectedSeasons.has(String(season))).sort((a, b) => +b - +a);
+    for (const season of includedSeasons) {
       if (selectedSeasons && !selectedSeasons.has(String(season))) continue;
       const rows = database.years[season] || [];
       for (const row of rows) {
@@ -576,7 +577,8 @@
       count: playerStats[id]?.count || 0,
       seasons: [...(playerStats[id]?.seasons || [])].sort(),
     })).filter((player) => player.count > 0);
-    const latestSeason = Math.max(0, ...Object.keys(database?.years || {}).map(Number));
+    const latestSeason = Math.max(0, ...includedSeasons.map(Number));
+    const dateDiagnostics = (database?.eventDateDiagnostics || []).filter((item) => !selectedSeasons || selectedSeasons.has(String(item?.season ?? item?.year ?? "")));
     return {
       hash: text(options.hash),
       latestSeason: String(latestSeason || ""),
@@ -584,7 +586,7 @@
       players,
       trackEntries: aliasEntries(trackMap),
       teamEntries: aliasEntries(teamMap),
-      dateDiagnostics: database?.eventDateDiagnostics || [],
+      dateDiagnostics,
       databaseStats: database?.stats || {},
     };
   }
@@ -772,12 +774,13 @@
     return rows.join("\r\n");
   }
 
-  function auditCacheKey(hash) {
-    return `wz2:data-quality:${text(hash) || "local"}`;
+  function auditCacheKey(hash, season = "") {
+    const base = `wz2:data-quality:${text(hash) || "local"}`;
+    return text(season) ? `${base}:season:${text(season)}` : base;
   }
 
-  function isAuditCacheCurrent(entry, hash) {
-    return !!entry && text(entry.hash) === text(hash) && !!entry.report;
+  function isAuditCacheCurrent(entry, hash, season = "") {
+    return !!entry && text(entry.hash) === text(hash) && text(entry.season) === text(season) && !!entry.report;
   }
 
   return {

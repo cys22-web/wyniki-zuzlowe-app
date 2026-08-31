@@ -549,7 +549,7 @@ const DATA_QUALITY_CATEGORY_LABELS={
   team_alias_review:'Alias drużyny — REVIEW',player_duplicate:'Możliwy duplikat zawodnika',score_mismatch:'Niezgodność wyniku',
   points_heats:'Punkty / biegi',alias_safety:'Bezpieczeństwo aliasu'
 };
-let dataQualityReport=null,dataQualityHash='',dataQualityFiltered=[],dataQualityShown=80,dataQualityRunning=false,dataQualityInitialized=false;
+let dataQualityReport=null,dataQualityHash='',dataQualityScope=null,dataQualityFiltered=[],dataQualityShown=80,dataQualityRunning=false;
 
 function currentDataQualityHash(){return String(DB_RECORD?.wzdb_sha256||DB?.wzdb_sha256||DB_RECORD?.source_sha256||DB?.built||'local')}
 function dataQualityNumber(value){return Number(value||0).toLocaleString('pl-PL')}
@@ -563,16 +563,15 @@ function hideEverythingForDataQuality(){
 }
 
 function dataQualityFilters(){return {season:$('dqSeason').value,confidence:$('dqConfidence').value,category:$('dqCategory').value,league:$('dqLeague').value,track:$('dqTrack').value,sort:$('dqSort').value}}
-function fillDataQualityOptions(){
-  if(!dataQualityReport)return;
-  const issues=dataQualityReport.issues||[],keep={season:$('dqSeason').value,category:$('dqCategory').value,league:$('dqLeague').value,track:$('dqTrack').value};
+function dataQualitySeasons(){return Object.keys(DB?.years||{}).sort((a,b)=>Number(b)-Number(a))}
+function latestDataQualitySeason(){return dataQualitySeasons()[0]||''}
+function fillDataQualityOptions(selectedSeason=dataQualityScope){
+  const issues=dataQualityReport?.issues||[],keep={season:String(selectedSeason??''),category:$('dqCategory').value,league:$('dqLeague').value,track:$('dqTrack').value};
   const values=(field)=>[...new Set(issues.map(item=>item[field]).filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'pl',{numeric:true}));
-  const seasons=[...new Set(issues.flatMap(item=>[item.season,...(item.seasons||[])].filter(Boolean)))].sort((a,b)=>Number(b)-Number(a));
   const setOptions=(id,allLabel,list,label=value=>value)=>{const node=$(id);node.innerHTML=`<option value="">${esc(allLabel)}</option>`+list.map(value=>`<option value="${esc(value)}">${esc(label(value))}</option>`).join('')};
-  setOptions('dqSeason','Wszystkie sezony',seasons);setOptions('dqCategory','Wszystkie typy',values('category'),dataQualityCategory);setOptions('dqLeague','Wszystkie ligi',values('league'));
+  setOptions('dqSeason','Wszystkie sezony',dataQualitySeasons());setOptions('dqCategory','Wszystkie typy',values('category'),dataQualityCategory);setOptions('dqLeague','Wszystkie ligi',values('league'));
   setOptions('dqTrack','Wszystkie canonical tracks',values('canonicalTrack'));
-  if(!dataQualityInitialized){$('dqSeason').value=dataQualityReport.latestSeason||'';dataQualityInitialized=true}
-  else for(const [field,value] of Object.entries(keep)){const node=$(`dq${field[0].toUpperCase()}${field.slice(1)}`);if(node&&[...node.options].some(option=>option.value===value))node.value=(value??'')}
+  for(const [field,value] of Object.entries(keep)){const node=$(`dq${field[0].toUpperCase()}${field.slice(1)}`);if(node&&[...node.options].some(option=>option.value===value))node.value=(value??'')}
 }
 
 function dataQualitySummaryTiles(summary){
@@ -600,9 +599,15 @@ function dataQualityIssueCard(item){
 }
 
 function bindDataQualityIssueActions(){
-  $('dataQualityList').querySelectorAll('[data-dq-event]').forEach(button=>button.onclick=event=>{event.preventDefault();const ref=eventKeyMap.get(button.dataset.dqEvent);if(ref)openEventDetail(ref[0],ref[1],'data-quality');else toast('Nie znaleziono wydarzenia w aktualnej bazie')});
-  $('dataQualityList').querySelectorAll('[data-dq-player]').forEach(button=>button.onclick=event=>{event.preventDefault();const pid=findPidByKey(button.dataset.dqPlayer);if(pid>=0)selectPlayer(pid);else toast('Nie znaleziono zawodnika w aktualnej bazie')});
-  $('dataQualityList').querySelectorAll('[data-dq-track]').forEach(button=>button.onclick=event=>{event.preventDefault();openEventsWithFilters({track:button.dataset.dqTrack})});
+  $('dataQualityList').querySelectorAll('[data-dq-event]').forEach(button=>button.onclick=event=>{event.preventDefault();const ref=eventKeyMap.get(button.dataset.dqEvent);if(ref)navigateFromDataQuality(()=>openEventDetail(ref[0],ref[1],'data-quality'));else toast('Nie znaleziono wydarzenia w aktualnej bazie')});
+  $('dataQualityList').querySelectorAll('[data-dq-player]').forEach(button=>button.onclick=event=>{event.preventDefault();const pid=findPidByKey(button.dataset.dqPlayer);if(pid>=0)navigateFromDataQuality(()=>selectPlayer(pid));else toast('Nie znaleziono zawodnika w aktualnej bazie')});
+  $('dataQualityList').querySelectorAll('[data-dq-track]').forEach(button=>button.onclick=event=>{event.preventDefault();navigateFromDataQuality(()=>openEventsWithFilters({track:button.dataset.dqTrack}))});
+}
+
+function navigateFromDataQuality(action){
+  persistHistoryContext();const previousRouteApplying=routeApplying;routeApplying=true;
+  try{action()}finally{routeApplying=previousRouteApplying}
+  if(!previousRouteApplying)pushCurrentRoute();
 }
 
 function renderDataQuality(){
@@ -616,30 +621,32 @@ function renderDataQuality(){
   $('dataQualityMore').classList.toggle('hidden',visible.length>=dataQualityFiltered.length);$('dataQualityExport').disabled=!dataQualityFiltered.length;bindDataQualityIssueActions();
 }
 
-async function runDataQualityAudit(force=false){
+async function runDataQualityAudit(force=false,season=$('dqSeason').value){
   if(!DB||dataQualityRunning)return;
-  const hash=currentDataQualityHash();dataQualityRunning=true;$('dataQualityRerun').disabled=true;
+  const hash=currentDataQualityHash(),scope=String(season||''),seasons=scope?[scope]:null;dataQualityRunning=true;$('dataQualityRerun').disabled=true;
   try{
     if(!force){
-      const cached=await idbGet(WZDataQuality.auditCacheKey(hash)).catch(()=>null);
-      if(WZDataQuality.isAuditCacheCurrent(cached,hash)){dataQualityReport=cached.report;dataQualityHash=hash;fillDataQualityOptions();renderDataQuality();setDataQualityStatus(`Audyt z pamięci podręcznej • ${new Date(dataQualityReport.generatedAt).toLocaleString('pl-PL')}`,'ready');return}
+      const cached=await idbGet(WZDataQuality.auditCacheKey(hash,scope)).catch(()=>null);
+      if(WZDataQuality.isAuditCacheCurrent(cached,hash,scope)){dataQualityReport=cached.report;dataQualityHash=hash;dataQualityScope=scope;fillDataQualityOptions(scope);renderDataQuality();setDataQualityStatus(`Audyt z pamięci podręcznej • ${new Date(dataQualityReport.generatedAt).toLocaleString('pl-PL')}`,'ready');return}
     }
-    setDataQualityStatus('Przygotowuję audyt aktualnego WZDB…');
+    setDataQualityStatus(scope?`Przygotowuję audyt sezonu ${scope}…`:'Przygotowuję audyt wszystkich sezonów…');
     let report;
-    if(typeof Worker!=='undefined')report=await new Promise((resolve,reject)=>{const worker=new Worker('data-quality-worker.js');worker.onmessage=event=>{const message=event.data||{};if(message.type==='progress')setDataQualityStatus(message.message);else if(message.type==='done'){worker.terminate();resolve(message.report)}else if(message.type==='error'){worker.terminate();reject(new Error(message.message))}};worker.onerror=error=>{worker.terminate();reject(new Error(error.message||'Błąd workera audytu'))};worker.postMessage({database:DB,hash})});
-    else{await new Promise(resolve=>setTimeout(resolve));const started=performance.now(),buildStarted=performance.now(),input=WZDataQuality.buildAuditInput(DB,{hash}),buildMs=performance.now()-buildStarted;setDataQualityStatus('Analizuję jakość danych…');await new Promise(resolve=>setTimeout(resolve));report=WZDataQuality.auditDataQuality(input,{hash});report.buildMs=buildMs;report.totalMs=performance.now()-started}
-    dataQualityReport=report;dataQualityHash=hash;dataQualityInitialized=false;fillDataQualityOptions();renderDataQuality();
-    await idbPut(WZDataQuality.auditCacheKey(hash),{hash,report}).catch(()=>{});
+    if(typeof Worker!=='undefined')report=await new Promise((resolve,reject)=>{const worker=new Worker('data-quality-worker.js');worker.onmessage=event=>{const message=event.data||{};if(message.type==='progress')setDataQualityStatus(message.message);else if(message.type==='done'){worker.terminate();resolve(message.report)}else if(message.type==='error'){worker.terminate();reject(new Error(message.message))}};worker.onerror=error=>{worker.terminate();reject(new Error(error.message||'Błąd workera audytu'))};worker.postMessage({database:DB,hash,seasons})});
+    else{await new Promise(resolve=>setTimeout(resolve));const started=performance.now(),buildStarted=performance.now(),input=WZDataQuality.buildAuditInput(DB,{hash,seasons}),buildMs=performance.now()-buildStarted;setDataQualityStatus('Analizuję jakość danych…');await new Promise(resolve=>setTimeout(resolve));report=WZDataQuality.auditDataQuality(input,{hash});report.buildMs=buildMs;report.totalMs=performance.now()-started}
+    dataQualityReport=report;dataQualityHash=hash;dataQualityScope=scope;fillDataQualityOptions(scope);renderDataQuality();
+    await idbPut(WZDataQuality.auditCacheKey(hash,scope),{hash,season:scope,report}).catch(()=>{});
     setDataQualityStatus(`Audyt gotowy • ${dataQualityNumber(report.issues.length)} problemów • ${Math.round(report.totalMs||report.durationMs)} ms`,'ready');
   }catch(error){setDataQualityStatus(`Audyt nie powiódł się: ${error.message||String(error)}`,'error')}
   finally{dataQualityRunning=false;$('dataQualityRerun').disabled=false}
 }
 
-async function openDataQuality({force=false,historyUpdate=true}={}){
-  if(historyUpdate&&!routeApplying)persistHistoryContext();hideEverythingForDataQuality();$('dataQualitySection').classList.remove('hidden');scrollTo({top:0,behavior:'auto'});
+async function openDataQuality({force=false,historyUpdate=true,season}={}){
+  if(historyUpdate&&!routeApplying)persistHistoryContext();
+  const hash=currentDataQualityHash();if(dataQualityHash!==hash){dataQualityReport=null;dataQualityHash='';dataQualityScope=null}
+  const scope=String(season===undefined?(dataQualityScope===null?latestDataQualitySeason():dataQualityScope):(season||''));
+  hideEverythingForDataQuality();$('dataQualitySection').classList.remove('hidden');fillDataQualityOptions(scope);scrollTo({top:0,behavior:'auto'});
   if(historyUpdate&&!routeApplying)pushCurrentRoute();
-  const hash=currentDataQualityHash();if(dataQualityHash!==hash){dataQualityReport=null;dataQualityHash='';dataQualityInitialized=false}
-  if(dataQualityReport&&!force){fillDataQualityOptions();renderDataQuality()}else await runDataQualityAudit(force);
+  if(dataQualityReport&&dataQualityScope===scope&&!force){renderDataQuality()}else await runDataQualityAudit(force,scope);
 }
 
 function exportDataQualityCSV(){
@@ -654,17 +661,18 @@ const _openCompareDataQuality=openCompare;openCompare=function(prefillPid=null){
 
 const _currentRouteDataQuality=currentRoute;currentRoute=function(){return !$('dataQualitySection').classList.contains('hidden')?{view:'data-quality'}:_currentRouteDataQuality()};
 const _captureViewContextDataQuality=captureViewContext;captureViewContext=function(){const context=_captureViewContextDataQuality();if(context.route.view==='data-quality')Object.assign(context,{controls:controlValues(['dqSeason','dqConfidence','dqCategory','dqLeague','dqTrack','dqSort']),dataQualityShown});return context};
-const _applyRouteDataQuality=applyRoute;applyRoute=async function(route,context=null){const next=CORE.normalizeRoute(route);if(next.view!=='data-quality')return await _applyRouteDataQuality(route,context);routeApplying=true;try{await openDataQuality({historyUpdate:false});if(context?.controls){setControlValues(context.controls);dataQualityShown=Math.max(80,Number(context.dataQualityShown)||80);renderDataQuality()}}finally{routeApplying=false}if(context)await restoreScroll(context.scrollY)};
+const _applyRouteDataQuality=applyRoute;applyRoute=async function(route,context=null){const next=CORE.normalizeRoute(route);if(next.view!=='data-quality')return await _applyRouteDataQuality(route,context);routeApplying=true;try{const season=context?.controls&&Object.hasOwn(context.controls,'dqSeason')?context.controls.dqSeason:undefined;await openDataQuality({historyUpdate:false,season});if(context?.controls){setControlValues(context.controls);dataQualityShown=Math.max(80,Number(context.dataQualityShown)||80);renderDataQuality()}}finally{routeApplying=false}if(context)await restoreScroll(context.scrollY)};
 
-const _activateDBDataQuality=activateDB;activateDB=async function(db){dataQualityReport=null;dataQualityHash='';dataQualityInitialized=false;hideDataQuality();return await _activateDBDataQuality(db)};
+const _activateDBDataQuality=activateDB;activateDB=async function(db){dataQualityReport=null;dataQualityHash='';dataQualityScope=null;hideDataQuality();return await _activateDBDataQuality(db)};
 
 $('dataQualityBtn').onclick=()=>void openDataQuality();
 $('dataQualityBack').onclick=()=>{if(history.length>1)history.back();else void applyRoute({view:'home'})};
-$('dataQualityRerun').onclick=()=>void runDataQualityAudit(true);$('dataQualityExport').onclick=exportDataQualityCSV;
-for(const id of ['dqSeason','dqConfidence','dqCategory','dqLeague','dqTrack','dqSort'])$(id).onchange=()=>{dataQualityShown=80;renderDataQuality();persistHistoryContext()};
-$('dqAllSeasons').onclick=()=>{$('dqSeason').value='';dataQualityShown=80;renderDataQuality();persistHistoryContext()};
+$('dataQualityRerun').onclick=()=>void runDataQualityAudit(true,$('dqSeason').value);$('dataQualityExport').onclick=exportDataQualityCSV;
+$('dqSeason').onchange=()=>{dataQualityShown=80;persistHistoryContext();void runDataQualityAudit(false,$('dqSeason').value)};
+for(const id of ['dqConfidence','dqCategory','dqLeague','dqTrack','dqSort'])$(id).onchange=()=>{dataQualityShown=80;renderDataQuality();persistHistoryContext()};
+$('dqAllSeasons').onclick=()=>{$('dqSeason').value='';dataQualityShown=80;persistHistoryContext();void runDataQualityAudit(false,'')};
 $('dqClear').onclick=()=>{setControlValues({dqConfidence:'all',dqCategory:'',dqLeague:'',dqTrack:'',dqSort:'confidence'});dataQualityShown=80;renderDataQuality();persistHistoryContext()};
 $('dataQualityMore').onclick=()=>{dataQualityShown+=80;renderDataQuality();persistHistoryContext()};
-window.getDataQualityDiagnostics=()=>({hash:dataQualityHash,running:dataQualityRunning,report:dataQualityReport,filtered:dataQualityFiltered.length,shown:Math.min(dataQualityShown,dataQualityFiltered.length)});
+window.getDataQualityDiagnostics=()=>({hash:dataQualityHash,scope:dataQualityScope,cacheKey:WZDataQuality.auditCacheKey(dataQualityHash,dataQualityScope||''),running:dataQualityRunning,report:dataQualityReport,filtered:dataQualityFiltered.length,shown:Math.min(dataQualityShown,dataQualityFiltered.length)});
 
 startup();
