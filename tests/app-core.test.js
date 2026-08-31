@@ -300,6 +300,66 @@ test("dated Albury individual fragments become one card per round", () => {
   ]);
 });
 
+test("Zlata Prilba rider-specific G:I fragments become one individual logical event", () => {
+  const base = {
+    season: "2026",
+    league: "Słowacja",
+    track: "Żarnowica",
+    competition: "Zlata Prilba",
+    round: "",
+    capacity: "",
+    eventDate: "2026-08-30",
+  };
+  const fragments = [
+    [16470, 1, "1", "miejsce w finale", ""],
+    [16471, 1, "2", "miejsce w finale", ""],
+    [16472, 1, "3", "miejsce w finale", ""],
+    [16473, 1, "2", "miejsce w barażu", "4m w finale"],
+    [16474, 1, "1", "miejsce w barażu", "5, w finale"],
+    [16475, 1, "6", "miejsce w finale", ""],
+    [16476, 1, "3", "miejsce w barażu", ""],
+    [16477, 1, "4", "miejsce w barażu", ""],
+    [16478, 1, "5", "miejsce w barażu", ""],
+    [16479, 11, "", "", ""],
+  ].map(([start, count, home, away, score]) => ({ ...base, start, count, home, away, score, teams: [] }));
+  const physicalKeys = fragments.map((fragment) => core.stableEventKey(fragment, 0));
+
+  const logical = core.mergeAdjacentEvents(fragments);
+
+  assert.deepEqual(physicalKeys, [
+    "e2026-ey2jnjpulf-0", "e2026-sp16prb73z-0", "e2026-26ya50daaax-0",
+    "e2026-1zq5l864xlh-0", "e2026-5zhpl77y07-0", "e2026-22p6i5ppcer-0",
+    "e2026-1q5rf8868y8-0", "e2026-da2g1114fc-0", "e2026-2e8ptix094g-0",
+    "e2026-1pfzt0os6by-0",
+  ]);
+  assert.equal(logical.length, 1);
+  assert.equal(logical[0].start, 16470);
+  assert.equal(logical[0].count, 20);
+  assert.equal(logical[0].fragmentCount, 10);
+  assert.equal(logical[0].multiTeam, false);
+  assert.deepEqual(logical[0].teams, []);
+  assert.equal(core.stableEventKey(logical[0], 0), physicalKeys[0]);
+});
+
+test("event.teams alone is not sufficient team-shape evidence", () => {
+  const base = {
+    season: "2026", league: "Test", track: "Test track", competition: "Individual cup",
+    round: "Finał", capacity: "", eventDate: "2026-08-30",
+  };
+  const logical = core.mergeAdjacentEvents([
+    { ...base, start: 0, count: 1, teams: [{ name: "miejsce w finale", score: "" }] },
+    { ...base, start: 1, count: 7, teams: [] },
+  ]);
+  assert.equal(logical.length, 1);
+  assert.equal(logical[0].multiTeam, false);
+});
+
+test("multi-team fragments never merge across different dates", () => {
+  const fragments = twoTeamCapacityFragments("", "");
+  fragments[1].eventDate = "2026-05-02";
+  assert.equal(core.mergeAdjacentEvents(fragments).length, 2);
+});
+
 test("dated individual merge respects category, date and team-match boundaries", () => {
   const base = {
     season: "2026",
@@ -683,15 +743,14 @@ test("form series selects newest results and renders them chronologically", () =
   assert.equal(core.formSeries(records, 5, "heat").at(-1).heatAverage, 20 / 3);
 });
 
-test("conflicting fragment dates are diagnostic and never selected arbitrarily", () => {
+test("conflicting fragment dates are a hard logical-event boundary", () => {
   const base = { season: "2026", league: "Szwecja", track: "Hallstavik", competition: "Division 1", round: "13 runda" };
-  const [event] = core.mergeAdjacentEvents([
+  const events = core.mergeAdjacentEvents([
     { ...base, start: 10, count: 3, home: "Team A", away: "", score: "30", eventDate: "2026-08-12" },
     { ...base, start: 13, count: 3, home: "", away: "Team B", score: "20", eventDate: "2026-08-13" },
   ]);
-  assert.equal(event.eventDate, null);
-  assert.equal(event.eventDateConflict, true);
-  assert.deepEqual(event.eventDateCandidates, ["2026-08-12", "2026-08-13"]);
+  assert.equal(events.length, 2);
+  assert.deepEqual(events.map((event) => event.eventDate), ["2026-08-12", "2026-08-13"]);
 });
 
 test("source event dates support text, Excel serials, blanks and conflicts", () => {

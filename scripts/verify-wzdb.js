@@ -119,6 +119,8 @@ let hallstavikDivisionOne = null;
 let hallstavikDivisionOneCount = 0;
 let hallstavikCapacities = [];
 let alburyRounds = [];
+let zarnovicaZlataPrilba = null;
+let zarnovicaPhysicalFragments = [];
 let eventDateStats2026 = null;
 const capacityBoundaryGroups2026 = [];
 for (const [season, refs] of Object.entries(database.events || {})) {
@@ -221,6 +223,22 @@ for (const [season, refs] of Object.entries(database.events || {})) {
       event.competition === "IM Australii" &&
       ["1 runda", "2 runda"].includes(event.round)
     );
+    zarnovicaPhysicalFragments = physical.filter((event) =>
+      event.eventDate === "2026-08-30" &&
+      event.league === "Słowacja" &&
+      event.track === "Żarnowica" &&
+      event.competition === "Zlata Prilba" &&
+      event.round === "" &&
+      event.capacity === ""
+    );
+    zarnovicaZlataPrilba = logical.find((event) =>
+      event.eventDate === "2026-08-30" &&
+      event.league === "Słowacja" &&
+      event.track === "Żarnowica" &&
+      event.competition === "Zlata Prilba" &&
+      event.round === "" &&
+      event.capacity === ""
+    );
 
     const broadIdentity = (event) => [
       event.season, event.league, event.track, event.competition, event.round,
@@ -263,9 +281,17 @@ for (const [season, refs] of Object.entries(database.events || {})) {
     }
   }
 }
+const generatedLogicalCountFields = new Set(["logical_events", "dated_events"]);
 for (const field of Object.keys(eventDateStats2026)) {
-  assert.equal(database.dateStats[field], eventDateStats2026[field], `database.dateStats.${field} differs`);
-  assert.equal(version.date_stats[field], eventDateStats2026[field], `version.date_stats.${field} differs`);
+  if (generatedLogicalCountFields.has(field)) {
+    // These two metadata counts describe the generator-time logical merger.
+    // Runtime PWA fixes may legitimately reduce them without rewriting WZDB.
+    assert.equal(database.dateStats[field], version.date_stats[field], `stored ${field} metadata differs`);
+    assert.ok(database.dateStats[field] >= eventDateStats2026[field], `runtime ${field} unexpectedly exceeds stored metadata`);
+  } else {
+    assert.equal(database.dateStats[field], eventDateStats2026[field], `database.dateStats.${field} differs`);
+    assert.equal(version.date_stats[field], eventDateStats2026[field], `version.date_stats.${field} differs`);
+  }
 }
 assert.equal(eventDateStats2026.dated_events, eventDateStats2026.logical_events);
 assert.equal(eventDateStats2026.dated_records, eventDateStats2026.records);
@@ -284,7 +310,7 @@ if (version.date_map_sha256 !== null) {
 }
 assert.ok(hallstavikDivisionOne, "Hallstavik Division 1 round 13 is missing");
 assert.ok(logicalMultiTeamEvents > 100, "Too few multi-team fragment groups were recognized across WZDB");
-assert.equal(logicalFragmentedIndividualEvents, 13, "The 13 dated individual fragment groups regressed");
+assert.equal(logicalFragmentedIndividualEvents, 14, "The 13 established merges plus Žarnovica regressed");
 assert.equal(capacityBoundaryGroups2026.length, 10, "Unexpected number of mixed-capacity groups in 2026");
 assert.equal(hallstavikDivisionOneCount, 1, "Hallstavik Division 1 should be one logical event");
 assert.equal(hallstavikDivisionOne.count, 13, "Hallstavik event does not contain all 13 riders");
@@ -298,10 +324,33 @@ assert.deepEqual(alburyRounds.map((event) => ({
   round: event.round,
   date: event.eventDate,
   participants: event.count,
+  fragments: event.fragmentCount,
 })), [
-  { round: "1 runda", date: "2026-01-03", participants: 17 },
-  { round: "2 runda", date: "2026-01-04", participants: 17 },
+  { round: "1 runda", date: "2026-01-03", participants: 17, fragments: 1 },
+  { round: "2 runda", date: "2026-01-04", participants: 17, fragments: 4 },
 ]);
+const landshutBayernCup = capacityBoundaryGroups2026.find((event) =>
+  event.track === "Landshut" && event.competition === "ADAC Bayern Cup"
+);
+const stralsundLigaNord = capacityBoundaryGroups2026.find((event) =>
+  event.track === "Stralsund" && event.competition === "Liga Nord"
+);
+assert.deepEqual(
+  { physicalEvents: landshutBayernCup?.physicalEvents, logicalEvents: landshutBayernCup?.logicalEvents },
+  { physicalEvents: 15, logicalEvents: 15 },
+  "Landshut ADAC Bayern Cup capacity boundaries regressed"
+);
+assert.deepEqual(
+  { physicalEvents: stralsundLigaNord?.physicalEvents, logicalEvents: stralsundLigaNord?.logicalEvents },
+  { physicalEvents: 13, logicalEvents: 12 },
+  "Stralsund Liga Nord capacity boundaries regressed"
+);
+assert.ok(zarnovicaZlataPrilba, "Zlata Prilba Žarnovica logical event is missing");
+assert.equal(zarnovicaPhysicalFragments.length, 10, "Zlata Prilba should retain ten physical fragments");
+assert.equal(zarnovicaZlataPrilba.count, 20, "Zlata Prilba should contain all 20 riders");
+assert.equal(zarnovicaZlataPrilba.fragmentCount, 10, "Zlata Prilba should merge ten fragments");
+assert.equal(zarnovicaZlataPrilba.multiTeam, false, "Zlata Prilba must remain individual");
+assert.deepEqual(zarnovicaZlataPrilba.teams, [], "Zlata Prilba must not invent teams from G:I");
 
 const observedHeatCodes = new Set();
 const krosnoRecords = [];
@@ -333,6 +382,7 @@ console.log(JSON.stringify({
   stats: database.stats,
   recordsWithStartNumber,
   eventDateStats2026,
+  storedEventDateStats2026: database.dateStats,
   tylerHaupt2026Points: points,
   stableEventKeys: eventKeys.size,
   logicalEvents: logicalEventCount,
@@ -353,6 +403,12 @@ console.log(JSON.stringify({
     participants: event.count,
     fragments: event.fragmentCount,
   })),
+  zarnovicaZlataPrilba: {
+    participants: zarnovicaZlataPrilba.count,
+    fragments: zarnovicaZlataPrilba.fragmentCount,
+    physicalFragments: zarnovicaPhysicalFragments.length,
+    teams: zarnovicaZlataPrilba.teams,
+  },
   homeAwayClassification: {
     teamEvents,
     classifiedTeamEvents,

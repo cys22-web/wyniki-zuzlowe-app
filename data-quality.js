@@ -136,7 +136,7 @@
         && Number.isInteger(event.rowStart)
         && event.rowStart === byRow[index - 1].rowEnd + 1
       ));
-      const teamShaped = grouped.some((event) => text(event.home) || text(event.away) || text(event.score) || (event.teamKeys || []).length > 0);
+      const teamShaped = CORE.teamStructureEvidence(grouped).teamShaped;
       const high = rowContiguous && !teamShaped && grouped.length >= 3 && total >= 8 && total <= 40
         && largest <= Math.max(6, Math.ceil(total * 0.55)) && maximumOverlap < 0.25;
       const result = issue("split_candidate", high ? "HIGH" : "REVIEW", first,
@@ -509,7 +509,7 @@
         const row = rows[merged.start] || [];
         const home = value(row[5]), away = value(row[6]), score = value(row[7]);
         const teams = Array.isArray(merged.teams) ? merged.teams : [];
-        const classicTeam = !!(home && away && score);
+        const classicTeam = CORE.hasClassicTeamStructure({ home, away, score });
         const multiTeam = (Number(merged.fragmentCount) || 1) > 1 && teams.length > 1;
         const identity = {
           season: String(season),

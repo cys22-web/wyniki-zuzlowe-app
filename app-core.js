@@ -995,15 +995,80 @@
   const LOGICAL_EVENT_FIELDS = ["season", "league", "track", "competition", "round"];
 
   function logicalEventSignature(event) {
-    return LOGICAL_EVENT_FIELDS.map((field) => normalize(event?.[field])).join("\u001f");
+    return LOGICAL_EVENT_FIELDS.map((field) =>
+      field === "track" ? canonicalTrackKey(event?.[field]) : normalize(event?.[field])
+    ).join("\u001f");
+  }
+
+  function hasTeamLabel(value) {
+    return /[a-z\u00c0-\u024f\u1e00-\u1eff]/iu.test(String(value || "").trim());
+  }
+
+  function hasStandingScore(value) {
+    return /^\d+(?:[.,]\d+)?(?:\s*\+\s*\d+(?:[.,]\d+)?)?$/.test(String(value || "").trim());
+  }
+
+  function hasClassicTeamStructure(event) {
+    const home = String(event?.home || "").trim();
+    const away = String(event?.away || "").trim();
+    const score = String(event?.score || "").trim();
+    return Boolean(score && home && away && hasTeamLabel(home) && hasTeamLabel(away));
   }
 
   function standingTeam(event) {
     const home = String(event?.home || "").trim();
     const away = String(event?.away || "").trim();
     const score = String(event?.score || "").trim();
-    if (!score || Boolean(home) === Boolean(away)) return null;
+    const name = home || away;
+    const supportedByRows = Number(event?.count) >= 2;
+    if (!score || Boolean(home) === Boolean(away) || (!supportedByRows && !hasTeamLabel(name)) || (!supportedByRows && !hasStandingScore(score))) return null;
     return { name: home || away, score };
+  }
+
+  function teamStructureEvidence(events) {
+    const source = events || [];
+    const classicTeam = source.some(hasClassicTeamStructure);
+    const teams = [];
+    const seenTeams = new Set();
+    for (const event of source) {
+      const candidates = [standingTeam(event)];
+      for (const team of Array.isArray(event?.teams) ? event.teams : []) {
+        const name = String(team?.name || "").trim();
+        const score = String(team?.score || "").trim();
+        if (name && score && (Number(event?.count) >= 2 || (hasTeamLabel(name) && hasStandingScore(score)))) candidates.push(team);
+      }
+      for (const team of candidates.filter(Boolean)) {
+        const key = normalize(team.name);
+        if (!key || seenTeams.has(key)) continue;
+        seenTeams.add(key);
+        teams.push({ name: String(team.name), score: String(team.score || "") });
+      }
+    }
+    const multiTeam = !classicTeam && teams.length > 1;
+    return { classicTeam, multiTeam, teamShaped: classicTeam || multiTeam, teams };
+  }
+
+  function legacyStandingTeams(events) {
+    const teams = [];
+    const seenTeams = new Set();
+    for (const event of events || []) {
+      const home = String(event?.home || "").trim();
+      const away = String(event?.away || "").trim();
+      const score = String(event?.score || "").trim();
+      const candidates = Array.isArray(event?.teams) && event.teams.length
+        ? event.teams.filter((team) =>
+          String(team?.name || "").trim() &&
+          (String(team?.score || "").trim() || Number(event?.count) >= 2)
+        )
+        : score && Boolean(home) !== Boolean(away) ? [{ name: home || away, score }] : [];
+      for (const team of candidates) {
+        const key = normalize(team?.name);
+        if (!key || seenTeams.has(key)) continue;
+        seenTeams.add(key);
+        teams.push({ name: String(team.name), score: String(team.score || "") });
+      }
+    }
+    return teams;
   }
 
   /*
@@ -1080,46 +1145,35 @@
         ) groupEnd += 1;
 
         const capacityGroup = run.slice(groupIndex, groupEnd);
-        const teams = [];
-        const seenTeams = new Set();
-        for (const event of capacityGroup) {
-          const candidates = Array.isArray(event.teams) && event.teams.length
-            ? event.teams
-            : [standingTeam(event)].filter(Boolean);
-          for (const team of candidates) {
-            const key = normalize(team.name);
-            if (!key || seenTeams.has(key)) continue;
-            seenTeams.add(key);
-            teams.push({ name: String(team.name), score: String(team.score || "") });
-          }
-        }
-
-        if (strong && capacityGroup.length > 1 && teams.length > 1) {
-          // Preserve the established merge for multi-team standings,
-          // including legacy seasons, inside one capacity only.
-          appendMerged(capacityGroup, teams, true);
-        } else {
-          /*
-         * G:I is overloaded in PL2. Team matches store home/away/score there,
-         * while individual meetings can store rider-specific final or
-         * semi-final placing. Preserve those physical keys, then join only a
-         * row-contiguous, fully dated, non-team occurrence.
+        /*
+         * G:I is overloaded in PL2. A team shape needs a named two-team
+         * fixture, or at least two distinct standings backed by numeric totals
+         * or multiple rider rows. Rider-specific places/statuses and
+         * event.teams by themselves are not team evidence.
          */
-          const eventDate = String(capacityGroup[0]?.eventDate || "").trim();
-          const sameDate = Boolean(eventDate) && capacityGroup.every(
-            (event) => String(event?.eventDate || "").trim() === eventDate
-          );
-          const teamShaped = capacityGroup.some((event) =>
-            (String(event?.score || "").trim() &&
-              (String(event?.home || "").trim() || String(event?.away || "").trim())) ||
-            (Array.isArray(event?.teams) && event.teams.length)
-          );
+        const eventDate = String(capacityGroup[0]?.eventDate || "").trim();
+        const sameDate = Boolean(eventDate) && capacityGroup.every(
+          (event) => String(event?.eventDate || "").trim() === eventDate
+        );
+        const eventDateCandidates = [...new Set(capacityGroup
+          .map((event) => String(event?.eventDate || "").trim())
+          .filter(Boolean))];
+        const dateConflict = eventDateCandidates.length > 1;
+        const evidence = teamStructureEvidence(capacityGroup);
+        const legacyTeams = eventDateCandidates.length ? [] : legacyStandingTeams(capacityGroup);
 
-          if (strong && capacityGroup.length > 1 && sameDate && !teamShaped) {
-            appendMerged(capacityGroup, [], false);
-          } else {
-            appendSeparate(capacityGroup);
-          }
+        if (!strong || capacityGroup.length < 2 || dateConflict || evidence.classicTeam) {
+          appendSeparate(capacityGroup);
+        } else if (legacyTeams.length > 1) {
+          // Historical seasons have no mapped dates; retain their established
+          // multi-team grouping instead of reinterpreting ambiguous G:I data.
+          appendMerged(capacityGroup, legacyTeams, true);
+        } else if (evidence.multiTeam) {
+          appendMerged(capacityGroup, evidence.teams, true);
+        } else if (sameDate) {
+          appendMerged(capacityGroup, [], false);
+        } else {
+          appendSeparate(capacityGroup);
         }
         groupIndex = groupEnd;
       }
@@ -1394,6 +1448,7 @@
     formStats,
     latestEventRefs,
     logicalEventSignature,
+    hasClassicTeamStructure,
     lastRecords,
     leagueQuickFilterMatches,
     leagueQuickFilters,
@@ -1414,6 +1469,7 @@
     standardDeviation,
     stableEventKey,
     stableHash,
+    teamStructureEvidence,
     thresholdTrend,
     trackHistory,
     urlForRoute,

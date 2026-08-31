@@ -167,7 +167,7 @@ function ensureEvents(){
   }
   logicalEventsPreparedDB=DB;
 }
-function eventData(y,ei){const e=DB.events[y]?.[ei];if(!e)return null;const [start,count,fragmentCount=1,teams=[],eventDate='']=e,r=DB.years[y][start],classicTeam=!!(val(r[5])&&val(r[6])&&val(r[7])),multiTeam=fragmentCount>1&&teams.length>1;return {y,ei,start,count,r,classicTeam,multiTeam,team:classicTeam||multiTeam,fragmentCount,teams,eventDate}}
+function eventData(y,ei){const e=DB.events[y]?.[ei];if(!e)return null;const [start,count,fragmentCount=1,teams=[],eventDate='']=e,r=DB.years[y][start],classicTeam=CORE.hasClassicTeamStructure({home:val(r[5]),away:val(r[6]),score:val(r[7])}),multiTeam=fragmentCount>1&&teams.length>1;return {y,ei,start,count,r,classicTeam,multiTeam,team:classicTeam||multiTeam,fragmentCount,teams,eventDate}}
 function eventIdentity(d){const r=d.r;return {season:d.y,home:d.multiTeam?'':val(r[5]),away:d.multiTeam?'':val(r[6]),score:d.multiTeam?'':val(r[7]),league:val(r[8]),track:val(r[9]),competition:val(r[10]),round:val(r[11]),capacity:val(r[12])}}
 function buildEventIndex(){
   ensureEvents();eventIndex=[];rowEventMap={};eventKeyMap=new Map();eventRefKeys=new Map();

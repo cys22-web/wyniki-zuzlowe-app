@@ -92,6 +92,61 @@ test("fixed Albury logical event is not a split candidate", () => {
   assert.deepEqual(quality.findSplitCandidates([fixed]), []);
 });
 
+test("Zlata Prilba split fixture is HIGH before merge and absent after merge", () => {
+  const placements = [
+    ["1", "miejsce w finale", ""],
+    ["2", "miejsce w finale", ""],
+    ["3", "miejsce w finale", ""],
+    ["2", "miejsce w barażu", "4m w finale"],
+    ["1", "miejsce w barażu", "5, w finale"],
+    ["6", "miejsce w finale", ""],
+    ["3", "miejsce w barażu", ""],
+    ["4", "miejsce w barażu", ""],
+    ["5", "miejsce w barażu", ""],
+    ["", "", ""],
+  ];
+  let nextRow = 16470;
+  const split = placements.map(([home, away, score], index) => {
+    const count = index === placements.length - 1 ? 11 : 1;
+    const rowStart = nextRow;
+    nextRow += count;
+    return event(`zarnowica-${index}`, {
+      eventDate: "2026-08-30",
+      league: "Słowacja",
+      track: "Żarnowica",
+      competition: "Zlata Prilba",
+      round: "",
+      home,
+      away,
+      score,
+      count,
+      rowStart,
+      rowEnd: nextRow - 1,
+      participants: Array.from({ length: count }, (__, riderIndex) => rider(rowStart + riderIndex)),
+    });
+  });
+
+  const [candidate] = quality.findSplitCandidates(split);
+  assert.equal(candidate.confidence, "HIGH");
+  assert.equal(candidate.logicalEvents, 10);
+  assert.equal(candidate.participantsTotal, 20);
+  assert.equal(candidate.teamShaped, false);
+
+  const fixed = event("zarnowica-fixed", {
+    eventDate: "2026-08-30",
+    league: "Słowacja",
+    track: "Żarnowica",
+    competition: "Zlata Prilba",
+    round: "",
+    count: 20,
+    fragmentCount: 10,
+    rowStart: 16470,
+    rowEnd: 16489,
+    participants: Array.from({ length: 20 }, (__, index) => rider(16470 + index)),
+  });
+  assert.deepEqual(quality.findSplitCandidates([fixed]), []);
+});
+
 test("capacity is a hard boundary for split detection", () => {
   const left = event("125", { capacity: "125 cc" });
   const right = event("250", { capacity: "250 cc", participants: [rider(5), rider(6), rider(7), rider(8)] });
