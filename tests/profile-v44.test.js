@@ -80,7 +80,7 @@ test("service-worker controller change performs at most one guarded reload", asy
   handlers.controllerchange();
   handlers.controllerchange();
   assert.equal(reloads, 1);
-  assert.equal(storage.get("wz-pwa-controller-reload-v511"), "1");
+  assert.equal(storage.get("wz-pwa-controller-reload-v52"), "1");
 });
 
 test("stage A profile exposes track history and filtered form ranges", () => {

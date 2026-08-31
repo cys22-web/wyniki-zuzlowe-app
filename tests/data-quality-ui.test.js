@@ -59,9 +59,9 @@ test("panel exposes required filters, expandable issues and CSV export", () => {
   assert.match(app, /data-dq-track/);
 });
 
-test("data-quality assets are available offline in the v5.1.1 cache", () => {
+test("data-quality assets are available offline in the v5.2 cache", () => {
   assert.match(sw, /"data-quality\.js"/);
   assert.match(sw, /"data-quality-worker\.js"/);
-  assert.match(sw, /wz-v5-1-1-20260831-data-quality-scope/);
+  assert.match(sw, /wz-v5-2-20260831-light-dashboard/);
   assert.match(html, /<script src="data-quality\.js"><\/script>/);
 });

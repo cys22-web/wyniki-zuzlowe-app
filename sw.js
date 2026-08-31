@@ -1,4 +1,4 @@
-const CACHE_NAME = "wz-v5-1-1-20260831-data-quality-scope";
+const CACHE_NAME = "wz-v5-2-20260831-light-dashboard";
 const APP_SHELL = [
   "./",
   "index.html",
