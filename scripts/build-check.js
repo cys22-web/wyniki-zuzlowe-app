@@ -71,7 +71,7 @@ assert.match(serviceWorker, /clients\.claim/);
 assert.match(serviceWorker, /app-core\.js/);
 assert.match(serviceWorker, /data-quality\.js/);
 assert.match(serviceWorker, /data-quality-worker\.js/);
-assert.match(serviceWorker, /wz-v5-1-/);
+assert.match(serviceWorker, /wz-v5-1-1-/);
 assert.match(app, /eventDateForRow/);
 assert.match(app, /S\(row\[0\]\)\],key=/);
 assert.doesNotMatch(app, /S\(row\[13\]\)\],key=/);
