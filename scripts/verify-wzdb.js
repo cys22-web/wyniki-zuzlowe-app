@@ -281,17 +281,9 @@ for (const [season, refs] of Object.entries(database.events || {})) {
     }
   }
 }
-const generatedLogicalCountFields = new Set(["logical_events", "dated_events"]);
 for (const field of Object.keys(eventDateStats2026)) {
-  if (generatedLogicalCountFields.has(field)) {
-    // These two metadata counts describe the generator-time logical merger.
-    // Runtime PWA fixes may legitimately reduce them without rewriting WZDB.
-    assert.equal(database.dateStats[field], version.date_stats[field], `stored ${field} metadata differs`);
-    assert.ok(database.dateStats[field] >= eventDateStats2026[field], `runtime ${field} unexpectedly exceeds stored metadata`);
-  } else {
-    assert.equal(database.dateStats[field], eventDateStats2026[field], `database.dateStats.${field} differs`);
-    assert.equal(version.date_stats[field], eventDateStats2026[field], `version.date_stats.${field} differs`);
-  }
+  assert.equal(database.dateStats[field], eventDateStats2026[field], `database.dateStats.${field} differs`);
+  assert.equal(version.date_stats[field], eventDateStats2026[field], `version.date_stats.${field} differs`);
 }
 assert.equal(eventDateStats2026.dated_events, eventDateStats2026.logical_events);
 assert.equal(eventDateStats2026.dated_records, eventDateStats2026.records);
