@@ -1,4 +1,4 @@
-const CACHE_NAME = "wz-v5-2-20260831-light-dashboard";
+const CACHE_NAME = "wz-v5-2-1-20260901-individual-event-merge";
 const APP_SHELL = [
   "./",
   "index.html",
